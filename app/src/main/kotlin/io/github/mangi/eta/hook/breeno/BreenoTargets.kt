@@ -22,7 +22,6 @@ internal class BreenoTargets private constructor(
 ) {
     val missingBridgeMethods: List<String> = listOf(
         "current-room" to currentRoomId,
-        "current-agent" to currentAgentName,
         "history-list" to historyList,
         "history-insert" to insertHistory,
         "directive-dispatch" to dispatchDirectives,
@@ -109,12 +108,12 @@ internal class BreenoTargets private constructor(
                 }
             }
             val currentAgent = targets.findMethod(
-                key = "breeno.current-agent.v1",
+                key = "breeno.current-agent.v2",
                 validate = { it.declaringClass.name == ROOM_MANAGER && it.matches(STRING) },
             ) {
                 // 当前房间与 Agent 都是字段 getter；房间类型 getter 还会调用状态查询，不能混用。
                 if (currentRoom == null) return@findMethod emptyList()
-                findMethod {
+                val direct = findMethod {
                     matcher {
                         declaredClass = ROOM_MANAGER
                         paramTypes("boolean", "boolean", STRING)
@@ -124,6 +123,21 @@ internal class BreenoTargets private constructor(
                 }.singleOrNull()?.invokes.orEmpty().filter {
                     it.className == ROOM_MANAGER && it.matches(STRING) &&
                         it.methodName != currentRoom.name && it.invokes.isEmpty()
+                }
+                if (direct.isNotEmpty()) return@findMethod direct
+
+                // 容错后备：在 ROOM_MANAGER 中查找返回 String 且无调用的字段 getter
+                findMethod {
+                    matcher {
+                        declaredClass = ROOM_MANAGER
+                        paramTypes()
+                        returnType = STRING
+                    }
+                }.filter {
+                    it.className == ROOM_MANAGER &&
+                        it.methodName != currentRoom.name &&
+                        !Modifier.isStatic(it.modifiers) &&
+                        it.invokes.isEmpty()
                 }
             }
             val fastMode = targets.findMethod(

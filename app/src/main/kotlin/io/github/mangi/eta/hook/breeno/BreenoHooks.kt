@@ -184,6 +184,9 @@ internal object BreenoHooks {
                 )
                 return@install
             }
+            if (targets.currentAgentName == null) {
+                logger.info("Breeno: currentAgentName 未定位，历史记录将使用默认 Agent '$BREENO_DEFAULT_AGENT_NAME'")
+            }
             hookOutboundMessage(hooks, classLoader)
             hookInboundMessage(hooks)
             hookCdmTextRequest(hooks)
