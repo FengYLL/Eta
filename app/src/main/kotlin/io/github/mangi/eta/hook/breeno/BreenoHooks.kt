@@ -70,6 +70,7 @@ internal object BreenoHooks {
     private const val EXPERIMENTAL_ADB_PREFIX = "/agent%20"
     private const val BREENO_HANDOFF_SOURCE = "breeno"
     private const val BREENO_DEFAULT_AGENT_NAME = "default"
+    private const val BREENO_WAKEWORD_PREFIX = "小布小布"
     private const val INJECTED_MARKER_KEY = "etaAgent"
     private const val AI_CHAT_TYPE_QUERY = 1
     private const val AI_CHAT_TYPE_ANSWER = 2
@@ -771,10 +772,16 @@ internal object BreenoHooks {
         )
     }
 
-    private fun resolveCustomModelPrompt(text: String): String? {
+    internal fun resolveCustomModelPrompt(text: String): String? {
         text.removeExperimentalPrefixOrNull()?.let { return it }
         if (!Prefs.isEnabled(Prefs.Keys.AGENT_CUSTOM_MODEL)) return null
         if (Prefs.isEnabled(Prefs.Keys.AGENT_REQUIRE_PREFIX)) return null
+        if (
+            Prefs.isEnabled(Prefs.Keys.AGENT_BYPASS_WAKEWORD_PREFIX) &&
+            text.trimStart().startsWith(BREENO_WAKEWORD_PREFIX, ignoreCase = true)
+        ) {
+            return null
+        }
         return text.trim()
     }
 

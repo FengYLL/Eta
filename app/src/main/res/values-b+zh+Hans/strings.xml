@@ -313,6 +313,8 @@
   <string name="ui_context_length_tokens_227860">上下文窗口（tokens）</string>
   <string name="ui_bright_screen_evokes_automatic_voice_input_4358fe">亮屏唤起自动语音输入</string>
   <string name="ui_only_take_over_with_agent_prefix_d17556">仅以 /agent 前缀接管</string>
+  <string name="ui_bypass_wakeword_prefix_title">以唤醒词开头时不使用自定义模型</string>
+  <string name="ui_bypass_wakeword_prefix_summary">输入以「小布小布」或「小爱同学」开头时执行厂商助手原生逻辑</string>
   <string name="ui_only_check_the_ranges_actually_supported_by_the_mode_2c343d">仅勾选模型或网关实际支持的档位；不支持的组合会在请求前明确报错。</string>
   <string name="ui_preferences_and_strategies_2abd3c">偏好与策略</string>
   <string name="ui_stop_a17f70">停止</string>

@@ -301,6 +301,8 @@
   <string name="ui_context_length_tokens_227860">內容長度上限（tokens）</string>
   <string name="ui_bright_screen_evokes_automatic_voice_input_4358fe">亮屏喚起自動語音輸入</string>
   <string name="ui_only_take_over_with_agent_prefix_d17556">僅以 /agent 前綴接管</string>
+  <string name="ui_bypass_wakeword_prefix_title">以喚醒詞開頭時不使用自訂模型</string>
+  <string name="ui_bypass_wakeword_prefix_summary">輸入以「小布小布」或「小愛同學」開頭時執行廠商助手原生邏輯</string>
   <string name="ui_only_check_the_ranges_actually_supported_by_the_mode_2c343d">僅勾選模型或網關實際支援的檔位；不支援的組合會在請求前明確報錯。</string>
   <string name="ui_preferences_and_strategies_2abd3c">偏好與策略</string>
   <string name="ui_stop_a17f70">停止</string>

@@ -493,6 +493,7 @@ internal object XiaoAiHooks {
             hasImage = image != null,
             customModelEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_CUSTOM_MODEL),
             requirePrefix = Prefs.isEnabled(Prefs.Keys.AGENT_REQUIRE_PREFIX),
+            bypassWakewordPrefix = Prefs.isEnabled(Prefs.Keys.AGENT_BYPASS_WAKEWORD_PREFIX),
         ) ?: return false
         turnTracker.capture(
             dialogId = dialogId,
@@ -541,6 +542,7 @@ internal object XiaoAiHooks {
             hasImage = turn.hasImage,
             customModelEnabled = Prefs.isEnabled(Prefs.Keys.AGENT_CUSTOM_MODEL),
             requirePrefix = Prefs.isEnabled(Prefs.Keys.AGENT_REQUIRE_PREFIX),
+            bypassWakewordPrefix = Prefs.isEnabled(Prefs.Keys.AGENT_BYPASS_WAKEWORD_PREFIX),
         ) != null
     }
 

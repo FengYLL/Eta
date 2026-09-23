@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.PowerSettingsNew
 import androidx.compose.material.icons.rounded.Psychology
+import androidx.compose.material.icons.rounded.RecordVoiceOver
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Smartphone
@@ -456,6 +457,17 @@ private fun SettingsPageContent(
                             key = Prefs.Keys.AGENT_REQUIRE_PREFIX,
                             icon = Icons.Rounded.Code,
                             iconTint = EtaPreferenceColors.Blue,
+                        )
+
+                        EtaPreferenceDivider()
+                        SwitchPref(
+                            context = context,
+                            prefs = prefs,
+                            title = stringResource(R.string.ui_bypass_wakeword_prefix_title),
+                            summary = stringResource(R.string.ui_bypass_wakeword_prefix_summary),
+                            key = Prefs.Keys.AGENT_BYPASS_WAKEWORD_PREFIX,
+                            icon = Icons.Rounded.RecordVoiceOver,
+                            iconTint = EtaPreferenceColors.Green,
                         )
                     }
                 }

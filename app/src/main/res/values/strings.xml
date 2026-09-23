@@ -325,6 +325,8 @@
   <string name="ui_context_length_tokens_227860">Context window (tokens)</string>
   <string name="ui_bright_screen_evokes_automatic_voice_input_4358fe">Bright screen evokes automatic voice input</string>
   <string name="ui_only_take_over_with_agent_prefix_d17556">Only take over with /agent prefix</string>
+  <string name="ui_bypass_wakeword_prefix_title">Do not use custom model when starting with wake words</string>
+  <string name="ui_bypass_wakeword_prefix_summary">Execute native assistant logic when input starts with “Xiaobu Xiaobu” or “Xiaoai Tongxue”</string>
   <string name="ui_only_check_the_ranges_actually_supported_by_the_mode_2c343d">Only check the ranges actually supported by the model or gateway; unsupported combinations will clearly report an error before requesting.</string>
   <string name="ui_preferences_and_strategies_2abd3c">Preferences and Strategies</string>
   <string name="ui_stop_a17f70">stop</string>

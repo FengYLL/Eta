@@ -8,6 +8,7 @@ internal object XiaoAiTakeoverPolicy {
     private const val AGENT_ENCODED_PREFIX = "/agent%20"
     private const val IMAGE_ONLY_PLACEHOLDER = "blank"
     private const val IMAGE_ONLY_PROMPT = "请分析这张图片"
+    private val WAKEWORD_PREFIXES = listOf("小布小布", "小爱同学")
 
     data class Decision(
         val prompt: String,
@@ -24,6 +25,7 @@ internal object XiaoAiTakeoverPolicy {
         hasImage: Boolean,
         customModelEnabled: Boolean,
         requirePrefix: Boolean,
+        bypassWakewordPrefix: Boolean = true,
     ): Decision? {
         if (!customModelEnabled) return null
         val trimmed = query.trim()
@@ -35,6 +37,9 @@ internal object XiaoAiTakeoverPolicy {
                 trimmed.removePrefix(AGENT_ENCODED_PREFIX).trim()
 
             else -> null
+        }
+        if (prefixed == null && bypassWakewordPrefix && WAKEWORD_PREFIXES.any { trimmed.startsWith(it, ignoreCase = true) }) {
+            return null
         }
         if (requirePrefix && prefixed == null) return null
 

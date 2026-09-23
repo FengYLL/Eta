@@ -37,6 +37,7 @@ internal object Prefs {
         const val SCREEN_ON_VOICE_COMMAND = "screen_on_voice_command"
         const val AGENT_CUSTOM_MODEL = "agent_custom_model"
         const val AGENT_REQUIRE_PREFIX = "agent_require_prefix"
+        const val AGENT_BYPASS_WAKEWORD_PREFIX = "agent_bypass_wakeword_prefix"
         const val AGENT_TERMINAL_TOOLS = "agent_terminal_tools"
         const val AGENT_BROWSER_TOOLS = "agent_browser_tools"
         const val AGENT_DEVICE_DIRECT_TOOLS = "agent_device_direct_tools"
@@ -56,6 +57,7 @@ internal object Prefs {
             SCREEN_ON_VOICE_COMMAND to false,
             AGENT_CUSTOM_MODEL to true,
             AGENT_REQUIRE_PREFIX to false,
+            AGENT_BYPASS_WAKEWORD_PREFIX to true,
             AGENT_TERMINAL_TOOLS to true,
             AGENT_BROWSER_TOOLS to true,
             AGENT_DEVICE_DIRECT_TOOLS to true,

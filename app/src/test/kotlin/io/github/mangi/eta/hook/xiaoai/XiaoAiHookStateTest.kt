@@ -60,6 +60,100 @@ class XiaoAiHookStateTest {
     }
 
     @Test
+    fun wakewordPrefixBypassesCustomModelUnlessAgentPrefixIsPresent() {
+        // 当 bypassWakewordPrefix = true 且未加 /agent 时，小布小布和小爱同学开头均不接管
+        assertNull(
+            XiaoAiTakeoverPolicy.decide(
+                query = "小布小布，今天天气",
+                hasImage = false,
+                customModelEnabled = true,
+                requirePrefix = false,
+                bypassWakewordPrefix = true,
+            )
+        )
+        assertNull(
+            XiaoAiTakeoverPolicy.decide(
+                query = "小爱同学，播放音乐",
+                hasImage = false,
+                customModelEnabled = true,
+                requirePrefix = false,
+                bypassWakewordPrefix = true,
+            )
+        )
+        assertNull(
+            XiaoAiTakeoverPolicy.decide(
+                query = "小布小布",
+                hasImage = false,
+                customModelEnabled = true,
+                requirePrefix = false,
+                bypassWakewordPrefix = true,
+            )
+        )
+        assertNull(
+            XiaoAiTakeoverPolicy.decide(
+                query = "小爱同学",
+                hasImage = false,
+                customModelEnabled = true,
+                requirePrefix = false,
+                bypassWakewordPrefix = true,
+            )
+        )
+        // 普通查询依然正常接管
+        assertEquals(
+            "今天天气",
+            XiaoAiTakeoverPolicy.decide(
+                query = "今天天气",
+                hasImage = false,
+                customModelEnabled = true,
+                requirePrefix = false,
+                bypassWakewordPrefix = true,
+            )?.prompt,
+        )
+        // /agent 具有最高优先级，强制接管
+        assertEquals(
+            "小布小布，今天天气",
+            XiaoAiTakeoverPolicy.decide(
+                query = "/agent 小布小布，今天天气",
+                hasImage = false,
+                customModelEnabled = true,
+                requirePrefix = false,
+                bypassWakewordPrefix = true,
+            )?.prompt,
+        )
+        assertEquals(
+            "小爱同学，播放音乐",
+            XiaoAiTakeoverPolicy.decide(
+                query = "/agent 小爱同学，播放音乐",
+                hasImage = false,
+                customModelEnabled = true,
+                requirePrefix = false,
+                bypassWakewordPrefix = true,
+            )?.prompt,
+        )
+        // 当 bypassWakewordPrefix = false 时，唤醒词输入仍能正常接管
+        assertEquals(
+            "小布小布，今天天气",
+            XiaoAiTakeoverPolicy.decide(
+                query = "小布小布，今天天气",
+                hasImage = false,
+                customModelEnabled = true,
+                requirePrefix = false,
+                bypassWakewordPrefix = false,
+            )?.prompt,
+        )
+        assertEquals(
+            "小爱同学，播放音乐",
+            XiaoAiTakeoverPolicy.decide(
+                query = "小爱同学，播放音乐",
+                hasImage = false,
+                customModelEnabled = true,
+                requirePrefix = false,
+                bypassWakewordPrefix = false,
+            )?.prompt,
+        )
+    }
+
+    @Test
     fun imageOnlyRequestGetsDefaultPromptWhenPrefixIsNotRequired() {
         assertEquals(
             "请分析这张图片",
