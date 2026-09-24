@@ -50,6 +50,7 @@ jobs:
           ETA_RELEASE_KEY_ALIAS: ${{ secrets.ETA_RELEASE_KEY_ALIAS }}
           ETA_RELEASE_KEY_PASSWORD: ${{ secrets.ETA_RELEASE_KEY_PASSWORD }}
         run: |
+          set -euo pipefail
           if [[ -z "$ETA_RELEASE_KEYSTORE_BASE64" ||
                 -z "$ETA_RELEASE_STORE_PASSWORD" ||
                 -z "$ETA_RELEASE_KEY_ALIAS" ||
@@ -99,6 +100,7 @@ jobs:
       - name: 验证并整理 APK
         id: apk
         run: |
+          set -euo pipefail
           debug_apk="app/build/outputs/apk/debug/app-debug.apk"
           release_apk="app/build/outputs/apk/release/app-release.apk"
           output_dir="$RUNNER_TEMP/apks"
@@ -120,7 +122,7 @@ jobs:
 
           "$apksigner_path" verify --print-certs "$release_apk" | tee "$RUNNER_TEMP/eta-apk-signature.txt"
           expected_digest="$(cat "$RUNNER_TEMP/eta-release.sha256")"
-          actual_digest="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/eta-apk-signature.txt")"
+          actual_digest="$(sed -n 's/^.*certificate SHA-256 digest: //p' "$RUNNER_TEMP/eta-apk-signature.txt" | tr '[:upper:]' '[:lower:]' | sort -u)"
           if [[ "$actual_digest" != "$expected_digest" ]]; then
             echo "::error::Release APK 签名与配置的发布证书不一致。"
             exit 1
