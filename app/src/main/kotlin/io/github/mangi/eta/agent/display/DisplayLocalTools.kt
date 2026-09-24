@@ -26,6 +26,7 @@ internal class DisplayLocalTools(
     private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
     private var observation: Observation? = null
     private var pauseBinding: AgentRunController.ResourceBinding? = null
+    private val windowAwaiter = DisplayWindowAwaiter(SystemClock::uptimeMillis, controller::awaitRetryDelay)
     private data class Observation(val id: String, val session: String, val epoch: Long, val tree: DisplayAccessibility.Tree)
 
     private var acquired = false
@@ -75,7 +76,7 @@ internal class DisplayLocalTools(
                         matches.single().packageName
                     }
                     val intent = context.packageManager.getLaunchIntentForPackage(packageName) ?: error("应用不可启动")
-                    launch(intent)
+                    launch(intent, packageName)
                 }
                 "open_uri" -> {
                     val uri = Uri.parse(args.getString("uri"))
@@ -112,11 +113,42 @@ internal class DisplayLocalTools(
         }
     }
 
-    private fun launch(intent: Intent): AgentModelClient.ToolResult {
+    private fun launch(intent: Intent, expectedPackage: String? = null): AgentModelClient.ToolResult {
         val state = DisplaySessionStore.refresh()
-        DisplaySessionStore.action("launch", run, state.epoch, Bundle().apply { putParcelable("intent", intent) })
+        val launched = DisplaySessionStore.action("launch", run, state.epoch, Bundle().apply { putParcelable("intent", intent) })
         clearObservation()
-        return success("应用已定向启动，请重新观察副屏")
+        val tree = awaitTree(launched, maxNodes = 1) {
+            expectedPackage == null || it.packageName == expectedPackage
+        } ?: error("应用启动已提交，但等待目标应用 $expectedPackage 出现在副屏超时；不会重复启动")
+        tree.close()
+        return success("副屏应用窗口已就绪，请重新观察副屏")
+    }
+
+    private fun validateReadSession(expected: DisplaySessionStore.Snapshot) {
+        controller.throwIfCancelled()
+        check(!closed.get()) { "执行租约已结束" }
+        val current = DisplaySessionStore.refresh()
+        check(current.session == expected.session && current.display == expected.display && current.epoch == expected.epoch) {
+            "等待期间显示会话或操作代次已改变，请重新观察"
+        }
+        DisplaySessionStore.action("validate", run, expected.epoch)
+    }
+
+    private fun awaitTree(
+        state: DisplaySessionStore.Snapshot,
+        maxNodes: Int = 120,
+        timeoutMs: Long = 5000,
+        accepts: (DisplayAccessibility.Tree) -> Boolean = { true },
+    ): DisplayAccessibility.Tree? = windowAwaiter.await(timeoutMs) {
+        validateReadSession(state)
+        val tree = DisplayAccessibility.tree(state.display, maxNodes)
+        try {
+            validateReadSession(state)
+            if (accepts(tree)) tree else { tree.close(); null }
+        } catch (failure: Exception) {
+            tree.close()
+            throw failure
+        }
     }
 
     private fun observe(args: JSONObject): AgentModelClient.ToolResult {
@@ -124,7 +156,7 @@ internal class DisplayLocalTools(
         val state = DisplaySessionStore.refresh()
         DisplaySessionStore.action("validate", run, state.epoch)
         val options = AgentScreenObservationContract.resolve(args)
-        val tree = DisplayAccessibility.tree(state.display, options.maxNodes)
+        val tree = checkNotNull(awaitTree(state, options.maxNodes))
         try {
             val image = if (options.includeScreenshot) {
                 val bitmap = DisplayAccessibility.screenshot(state.display)
@@ -136,7 +168,7 @@ internal class DisplayLocalTools(
                 } finally { bitmap.recycle() }
             } else null
             DisplaySessionStore.action("validate", run, state.epoch)
-            DisplayAccessibility.tree(state.display, options.maxNodes).use { after ->
+            checkNotNull(awaitTree(state, options.maxNodes)).use { after ->
                 check(after.window == tree.window && after.signature == tree.signature) { "截图期间窗口内容发生变化，请继续后重新观察" }
             }
             val id = UUID.randomUUID().toString()
@@ -264,7 +296,7 @@ internal class DisplayLocalTools(
 
     private fun waitFor(name: String, args: JSONObject): AgentModelClient.ToolResult {
         val expected = args.getString(if (name == "wait_for_text") "text" else "package_name")
-        val deadline = SystemClock.uptimeMillis() + args.optLong("timeout_ms", 10000).coerceIn(0, 60000)
+        val timeoutMs = args.optLong("timeout_ms", 10000).coerceIn(0, 60000)
         val matchMode = args.optString("match", "contains")
         require(matchMode in setOf("contains", "exact", "prefix")) { "副屏文字等待支持 contains/exact/prefix" }
         val includeDesc = args.optBoolean("include_desc", true)
@@ -273,17 +305,16 @@ internal class DisplayLocalTools(
             "prefix" -> text?.startsWith(expected) == true
             else -> text?.contains(expected) == true
         }
-        do {
-            controller.throwIfCancelled()
-            val state = DisplaySessionStore.refresh()
-            DisplaySessionStore.action("validate", run, state.epoch)
-            DisplayAccessibility.tree(state.display).use { tree ->
-                if (if (name == "wait_for_package") tree.packageName == expected else tree.nodes.any {
-                        !it.value.isPassword && (matches(it.value.text) || (includeDesc && matches(it.value.contentDescription)))
-                    }) return success("条件已出现，请重新观察后操作")
+        val state = DisplaySessionStore.refresh()
+        val tree = awaitTree(state, timeoutMs = timeoutMs) { candidate ->
+            if (name == "wait_for_package") candidate.packageName == expected else candidate.nodes.any {
+                !it.value.isPassword && (matches(it.value.text) || (includeDesc && matches(it.value.contentDescription)))
             }
-            SystemClock.sleep(250)
-        } while (SystemClock.uptimeMillis() < deadline)
+        }
+        if (tree != null) {
+            tree.close()
+            return success("条件已出现，请重新观察后操作")
+        }
         return AgentModelClient.ToolResult(JSONObject().put("ok", false).put("code", "TIMEOUT").toString())
     }
 

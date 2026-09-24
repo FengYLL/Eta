@@ -25,6 +25,7 @@ output-metadata.json
 *.jks
 *.keystore
 keystore.properties
+/signing/
 google-services.json
 
 # 本地配置和临时分析产物

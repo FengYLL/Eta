@@ -44,35 +44,27 @@ jobs:
         run: sdkmanager --channel=3 "platforms;android-37.0"
 
       - name: 准备发布证书
-        id: keystore
         env:
           ETA_RELEASE_KEYSTORE_BASE64: ${{ secrets.ETA_RELEASE_KEYSTORE_BASE64 }}
           ETA_RELEASE_STORE_PASSWORD: ${{ secrets.ETA_RELEASE_STORE_PASSWORD }}
           ETA_RELEASE_KEY_ALIAS: ${{ secrets.ETA_RELEASE_KEY_ALIAS }}
           ETA_RELEASE_KEY_PASSWORD: ${{ secrets.ETA_RELEASE_KEY_PASSWORD }}
         run: |
-          if [[ -n "$ETA_RELEASE_KEYSTORE_BASE64" &&
-                -n "$ETA_RELEASE_STORE_PASSWORD" &&
-                -n "$ETA_RELEASE_KEY_ALIAS" &&
-                -n "$ETA_RELEASE_KEY_PASSWORD" ]]; then
-            echo "使用仓库配置的 Release 签名 Secrets"
-            printf '%s' "$ETA_RELEASE_KEYSTORE_BASE64" \
-              | base64 --decode \
-              > "$RUNNER_TEMP/eta-release.jks"
-            echo "store_password=$ETA_RELEASE_STORE_PASSWORD" >> "$GITHUB_OUTPUT"
-            echo "key_alias=$ETA_RELEASE_KEY_ALIAS" >> "$GITHUB_OUTPUT"
-            echo "key_password=$ETA_RELEASE_KEY_PASSWORD" >> "$GITHUB_OUTPUT"
-          else
-            echo "::warning::未检测到 Release 签名 Secrets，自动生成临时签名证书以完成 APK 打包与验证。"
-            keytool -genkeypair -v -keystore "$RUNNER_TEMP/eta-release.jks" \
-              -alias eta_ci \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass android -keypass android \
-              -dname "CN=Eta, OU=Eta, O=Eta, L=Unknown, ST=Unknown, C=CN"
-            echo "store_password=android" >> "$GITHUB_OUTPUT"
-            echo "key_alias=eta_ci" >> "$GITHUB_OUTPUT"
-            echo "key_password=android" >> "$GITHUB_OUTPUT"
+          if [[ -z "$ETA_RELEASE_KEYSTORE_BASE64" ||
+                -z "$ETA_RELEASE_STORE_PASSWORD" ||
+                -z "$ETA_RELEASE_KEY_ALIAS" ||
+                -z "$ETA_RELEASE_KEY_PASSWORD" ]]; then
+            echo "::error::缺少 Release 签名 Secrets；必须使用配置的发布证书，不生成临时证书。"
+            exit 1
           fi
+          umask 077
+          printf '%s' "$ETA_RELEASE_KEYSTORE_BASE64" \
+            | base64 --decode \
+            > "$RUNNER_TEMP/eta-release.jks"
+          keytool -exportcert -keystore "$RUNNER_TEMP/eta-release.jks" \
+            -alias "$ETA_RELEASE_KEY_ALIAS" -storepass:env ETA_RELEASE_STORE_PASSWORD \
+            -file "$RUNNER_TEMP/eta-release.der"
+          sha256sum "$RUNNER_TEMP/eta-release.der" | cut -d ' ' -f 1 > "$RUNNER_TEMP/eta-release.sha256"
 
       - name: 工作屏与后台执行回归测试
         run: >-
@@ -97,9 +89,9 @@ jobs:
       - name: 构建 Debug 与 Release APK
         env:
           ETA_RELEASE_STORE_FILE: ${{ runner.temp }}/eta-release.jks
-          ETA_RELEASE_STORE_PASSWORD: ${{ steps.keystore.outputs.store_password }}
-          ETA_RELEASE_KEY_ALIAS: ${{ steps.keystore.outputs.key_alias }}
-          ETA_RELEASE_KEY_PASSWORD: ${{ steps.keystore.outputs.key_password }}
+          ETA_RELEASE_STORE_PASSWORD: ${{ secrets.ETA_RELEASE_STORE_PASSWORD }}
+          ETA_RELEASE_KEY_ALIAS: ${{ secrets.ETA_RELEASE_KEY_ALIAS }}
+          ETA_RELEASE_KEY_PASSWORD: ${{ secrets.ETA_RELEASE_KEY_PASSWORD }}
         run: >-
           ./gradlew --no-daemon --no-configuration-cache
           :app:assembleDebug :app:assembleRelease
@@ -126,7 +118,13 @@ jobs:
             exit 1
           fi
 
-          "$apksigner_path" verify "$release_apk"
+          "$apksigner_path" verify --print-certs "$release_apk" | tee "$RUNNER_TEMP/eta-apk-signature.txt"
+          expected_digest="$(cat "$RUNNER_TEMP/eta-release.sha256")"
+          actual_digest="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' "$RUNNER_TEMP/eta-apk-signature.txt")"
+          if [[ "$actual_digest" != "$expected_digest" ]]; then
+            echo "::error::Release APK 签名与配置的发布证书不一致。"
+            exit 1
+          fi
           mkdir -p "$output_dir"
           cp "$debug_apk" "$output_dir/app-debug.apk"
           cp "$release_apk" "$output_dir/app-release.apk"

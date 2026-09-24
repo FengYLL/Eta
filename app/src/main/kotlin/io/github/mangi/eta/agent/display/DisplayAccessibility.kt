@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
@@ -33,14 +34,25 @@ internal object DisplayAccessibility {
     fun tree(displayId: Int, maxNodes: Int = 120): Tree {
         require(displayId > 0)
         val service = AgentAccessibilityService.current() ?: error("请先启用 Eta 无障碍服务")
-        val windows = service.windowsOnAllDisplays[displayId].orEmpty()
-        val window = windows.filter { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION }
+        val allWindows = service.windowsOnAllDisplays
+        val windows = allWindows[displayId].orEmpty()
+        fun notReady(reason: String): Nothing {
+            val reportedDisplays = (0 until allWindows.size()).joinToString(",") { allWindows.keyAt(it).toString() }
+            val windowTypes = windows.joinToString(",") { "${it.id}:${it.type}" }
+            // Migration can leave an empty window list or a stale root in the service cache.
+            // The next bounded attempt must query the system again, never the main display.
+            service.clearCache()
+            throw DisplayWindowNotReadyException(
+                "$reason（display=$displayId，上报显示器=[$reportedDisplays]，窗口id:type=[$windowTypes]）",
+            )
+        }
+        val window = windows.filter { it.type == AccessibilityWindowInfo.TYPE_APPLICATION }
             .sortedByDescending { it.layer }
-            .firstOrNull() ?: error("副屏没有可读取的应用窗口，请先 launch_app；不回退主屏")
-        check(windows.none { it.layer > window.layer && it.type != android.view.accessibility.AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY }) {
+            .firstOrNull() ?: notReady("副屏应用窗口尚未就绪或尚未上报")
+        check(windows.none { it.layer > window.layer && it.type != AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY }) {
             "副屏被系统窗口遮挡，请主动接管；不操作下层页面"
         }
-        val root = window.root ?: error("副屏应用不提供无障碍节点，请主动接管")
+        val root = window.root ?: notReady("副屏应用窗口的无障碍节点尚不可读取")
         val packageName = root.packageName?.toString().orEmpty()
         val nodes = mutableListOf<Node>()
         val pending = java.util.ArrayDeque<AccessibilityNodeInfo>()

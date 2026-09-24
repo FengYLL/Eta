@@ -32,6 +32,8 @@
 
 截图仍通过 `takeScreenshot(displayId)` 获取，不依赖前台观看画面；图片编码与模型调用留在 App 进程。此实现直接使用既有 LSPosed 系统能力，不另行安装 Shizuku，也不启动拥有任意命令执行能力的 Root daemon。
 
+应用启动/迁移和首次观察会等待副屏无障碍窗口与根节点就绪（最多 5 秒），启动指定应用还会确认窗口包名。`wait_for_package` / `wait_for_text` 在调用方指定的超时内也容忍窗口短暂缺失。缺失时清理无障碍缓存后重试读取，不重放启动或输入；每次读取前后校验同一显示会话与操作代次。持续不可读才暂停，原因包含目标 display、系统上报的显示器及窗口类型。预览有画面不代表系统已提供无障碍窗口，不能据此判断应用未启动。
+
 Binder 连接通过 signature 权限保护的广播发放，校验发送 UID；每次事务再次验证真实 Binder 调用 UID、当前用户、会话、运行 ID 与动作代次。显示器创建需同时保留 TRUSTED、OWN_FOCUS、STEAL_TOP_FOCUS_DISABLED，运行前重复验证显示器有效性与几何。
 
 暂停撤销特权端未提交动作，长手势逐段检查租约并以 CANCEL 收尾。App 端节点提交与暂停确认、完成和主动接管共用门闩；已提交 Android 的动作无法撤销，不会自动重放结果不明的动作。恢复后旧观察不可继续使用。
@@ -63,6 +65,6 @@ Binder 连接通过 signature 权限保护的广播发放，校验发送 UID；�
 
 ## 构建和研究依据
 
-本地验证命令：`./gradlew :app:testDebugUnitTest :app:assembleDebug`。`PreviewSurfaceLeaseTest` 覆盖后台恢复、旧页面卸载、先卸载后到达的挂接、心跳超时、挂接失败和资源释放；`DisplayLeaseTest`、`DisplayPauseTest` 覆盖运行、暂停、接管和旧观察失效。GitHub Actions 的 `Eta Build` 工作流构建 Debug 和 Release APK。没有配置 Release 签名 Secrets 时使用临时 CI 证书；不同运行的临时签名不能保证覆盖安装。
+本地验证命令：`./gradlew :app:testDebugUnitTest :app:assembleDebug`。`PreviewSurfaceLeaseTest` 覆盖后台恢复、旧页面卸载、先卸载后到达的挂接、心跳超时、挂接失败和资源释放；`DisplayLeaseTest`、`DisplayPauseTest` 覆盖运行、暂停、接管和旧观察失效；`DisplayWindowAwaiterTest`、`DisplayAccessibilityTest` 覆盖窗口延迟上报、节点暂不可读、等待超时、取消和副屏隔离。GitHub Actions 的 `Eta Build` 工作流构建 Debug 和 Release APK，Release 必须配置签名 Secrets，缺失时构建失败，不生成临时证书。上传前验证 APK 签名并与配置的发布证书 SHA-256 比较。本地 `signing/` 目录不纳入版本控制。
 
 主要参考：[Operator-on-Android](https://github.com/xjyzs/Operator-on-Android/tree/1aad5cac38f4c1833397f03e2e104e2f5aebaa49) 的 `InputControlUtils.kt`、`VirtualDisplayViewer.kt`、`VirtualDisplayController.kt`，以及 [Ynkcc/VirtualDisplay](https://github.com/Ynkcc/VirtualDisplay/tree/0390d8f07ac4071658e77bff9b0974c57f16a186)、[scrcpy](https://github.com/Genymobile/scrcpy)、[AOSP Android 14 Display](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-14.0.0_r1/core/java/android/view/Display.java)。没有打包参考项目的完整 App 或远程命令服务；Operator 的 MIT 声明保留在 `assets/licenses/operator-on-android.txt` 和 [第三方说明](THIRD_PARTY_NOTICES.md)。
