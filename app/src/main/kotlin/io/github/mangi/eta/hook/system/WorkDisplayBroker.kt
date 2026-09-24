@@ -65,14 +65,18 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
     }
 
     fun start() {
-        context.registerReceiver(object : BroadcastReceiver() {
+        val receiver = object : BroadcastReceiver() {
             override fun onReceive(receiverContext: Context, intent: Intent) {
                 val uid = sentFromUid
                 if (intent.getIntExtra("version", 0) != DisplayProtocol.VERSION || !isOwner(uid)) return
                 setResultExtras(Bundle().apply { putBinder("broker", endpoint); putInt("version", DisplayProtocol.VERSION) })
                 resultCode = 1
             }
-        }, IntentFilter(DisplayProtocol.ACTION), DisplayProtocol.PERMISSION, worker, Context.RECEIVER_EXPORTED)
+        }
+        // The system context belongs to user 0. Receive connections from the actual foreground
+        // user as well; create() still verifies that user's identity before allocating anything.
+        DisplayReflection.call(context, "registerReceiverAsUser", receiver, user(-1),
+            IntentFilter(DisplayProtocol.ACTION), DisplayProtocol.PERMISSION, worker, Context.RECEIVER_EXPORTED)
     }
 
     private fun isOwner(uid: Int): Boolean = uid >= 10000 &&
@@ -371,8 +375,12 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
                 val component = DisplayReflection.get(task, "realActivity") as? android.content.ComponentName
                 if (DisplayReflection.get(task, "mUserId") == s.userId && component?.packageName == info.packageName) {
                     s.taskIds.add(DisplayReflection.get(task, "mTaskId") as Int)
-                    if (displayOf(task) != s.displayId && (DisplayReflection.call(task, "getRootTask") !== task ||
-                        DisplayReflection.call(task, "getWindowingMode") != 1)) unsafe = true
+                    if (displayOf(task) != s.displayId) {
+                        val top = DisplayReflection.call(task, "getTopNonFinishingActivity")
+                        if (DisplayReflection.call(task, "getRootTask") !== task ||
+                            DisplayReflection.call(task, "getWindowingMode") != 1 ||
+                            top == null || DisplayReflection.get(top, "packageName") != component?.packageName) unsafe = true
+                    }
                 }
             }, true)
             if (unsafe) {
