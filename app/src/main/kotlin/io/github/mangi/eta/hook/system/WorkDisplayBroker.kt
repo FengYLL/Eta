@@ -112,6 +112,7 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
         when (operation) {
             "pause" -> {
                 if (!request.containsKey("run") || request.getString("run") == session.lease.runId) session.lease.pause()
+                request.getString("reason")?.let { session.reason = it.take(500) }
                 return status(session)
             }
             "retain" -> { session.lease.retain(request.getString("run").orEmpty()); return status(session) }

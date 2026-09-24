@@ -50,7 +50,9 @@ internal data class AgentToolCapabilities(
             for (index in 0 until rootProjected.length()) {
                 val tool = rootProjected.getJSONObject(index)
                 val name = tool.getJSONObject("function").getString("name")
-                if (unavailableCode(name) == null) visible.put(tool)
+                if (unavailableCode(name) == null) visible.put(
+                    if (isolatedDisplay) io.github.mangi.eta.agent.display.DisplayToolPolicy.project(tool) else tool,
+                )
             }
         }
     }

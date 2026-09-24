@@ -8,6 +8,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class DisplayPauseTest {
+    @Test fun pauseAcknowledgementWaitsForNodeSubmission() {
+        val gate = DisplayActionGate()
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val paused = CountDownLatch(1)
+        val node = thread { gate.commit { entered.countDown(); assertTrue(release.await(2, TimeUnit.SECONDS)) } }
+        assertTrue(entered.await(2, TimeUnit.SECONDS))
+        val pause = thread { gate.commit { paused.countDown() } }
+        assertFalse(paused.await(50, TimeUnit.MILLISECONDS))
+        release.countDown()
+        assertTrue(paused.await(2, TimeUnit.SECONDS))
+        node.join(2000); pause.join(2000)
+    }
     @Test fun pauseRevokesLeaseBeforeReturningAndResumeRenewsBeforeLoopWakes() {
         val lease = DisplayLease()
         val first = lease.acquire("run")

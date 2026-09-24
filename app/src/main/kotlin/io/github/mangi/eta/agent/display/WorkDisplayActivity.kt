@@ -3,6 +3,8 @@ package io.github.mangi.eta.agent.display
 import android.app.Activity
 import android.graphics.Bitmap
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.widget.Button
 import android.widget.CheckBox
 import android.widget.ImageView
@@ -18,6 +20,20 @@ class WorkDisplayActivity : Activity() {
     private lateinit var preview: ImageView
     private var bitmap: Bitmap? = null
     private var previewSession = ""
+    private var previewEpoch = -1L
+    private val main = Handler(Looper.getMainLooper())
+    private var resumed = false
+    private val polling = object : Runnable {
+        override fun run() {
+            if (!resumed || isDestroyed) return
+            worker.execute {
+                if (DisplaySessionStore.state.value.session.isNotEmpty()) runCatching { DisplaySessionStore.refresh() }
+                main.post {
+                    if (resumed && !isDestroyed) { showStatus(); main.postDelayed(this, 1500) }
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,6 +72,7 @@ class WorkDisplayActivity : Activity() {
                     if (isDestroyed) next.recycle() else {
                         preview.setImageBitmap(next); bitmap?.recycle(); bitmap = next
                         previewSession = snapshot.session
+                        previewEpoch = snapshot.epoch
                     }
                 }
             })
@@ -95,12 +112,16 @@ class WorkDisplayActivity : Activity() {
             else -> R.string.work_display_closed
         }
         status.text = getString(label) + if (snapshot.reason.isBlank()) "" else "\n${snapshot.reason}"
-        if (snapshot.session != previewSession || snapshot.state in setOf("HUMAN", "LOST", "CLOSED")) {
+        if (snapshot.session != previewSession || snapshot.epoch != previewEpoch || snapshot.state in setOf("HUMAN", "LOST", "CLOSED")) {
             preview.setImageDrawable(null); bitmap?.recycle(); bitmap = null
         }
     }
 
+    override fun onResume() { super.onResume(); resumed = true; main.post(polling) }
+    override fun onPause() { resumed = false; main.removeCallbacks(polling); super.onPause() }
+
     override fun onDestroy() {
+        main.removeCallbacks(polling)
         worker.shutdown()
         preview.setImageDrawable(null); bitmap?.recycle(); bitmap = null
         super.onDestroy()

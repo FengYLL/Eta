@@ -27,7 +27,7 @@ internal object DisplaySessionStore {
     private val mutable = MutableStateFlow(Snapshot())
     val state = mutable.asStateFlow()
     private val anchor = Binder()
-    private val nodeCommitLock = Any()
+    private val nodeGate = DisplayActionGate()
     @Volatile private var broker: IBinder? = null
     @Volatile private var controller: AgentRunController? = null
     private const val RESOURCE = "work-display"
@@ -38,19 +38,23 @@ internal object DisplaySessionStore {
 
     @Synchronized fun create(context: Context): Snapshot {
         check(Looper.myLooper() != Looper.getMainLooper()) { "请在工作线程创建工作屏" }
-        if (mutable.value.session.isNotEmpty()) return refresh()
+        if (mutable.value.session.isNotEmpty() && broker != null) return refresh()
+        if (broker == null) mutable.value = Snapshot()
         if (!AgentExecutionService.acquire(context, RESOURCE, retainedResource = true) { close() }) error("无法保持工作屏服务，请从 Eta 界面重试")
         try {
             val connection = connect(context)
             broker = connection
             connection.linkToDeath({
-                mutable.value = mutable.value.copy(state = "LOST", reason = "系统显示服务已断开；旧动作不会重放")
-                controller?.pause()
-                broker = null
-                AgentExecutionService.release(RESOURCE)
+                if (broker === connection) {
+                    broker = null
+                    mutable.value = mutable.value.copy(state = "LOST", reason = "系统显示服务已断开；旧动作不会重放")
+                    try { runCatching { controller?.pause() } }
+                    finally { AgentExecutionService.release(RESOURCE) }
+                }
             }, 0)
             return update(call("create", Bundle().apply { putBinder("client", anchor) }))
         } catch (failure: Exception) {
+            broker = null
             AgentExecutionService.release(RESOURCE)
             throw failure
         }
@@ -65,9 +69,9 @@ internal object DisplaySessionStore {
 
     fun refresh(): Snapshot = update(call("status"))
     fun pause() {
-        controller?.pause()
+        runCatching { controller?.pause() }
         if (broker != null && mutable.value.session.isNotEmpty()) {
-            runCatching { synchronized(nodeCommitLock) { update(call("pause")) } }.onFailure {
+            runCatching { nodeGate.commit { update(call("pause")) } }.onFailure {
                 mutable.value = mutable.value.copy(state = "LOST", reason = it.message.orEmpty())
             }
         }
@@ -79,14 +83,23 @@ internal object DisplaySessionStore {
     }
     fun onRunPause(run: String, paused: Boolean) {
         if (mutable.value.run != run) return
-        synchronized(nodeCommitLock) {
+        val result = runCatching { nodeGate.commit {
             update(call(if (paused) "pause" else "acquire", Bundle().apply { putString("run", run) }))
-        }
+        } }
+        if (!paused) result.getOrThrow()
+        else result.onFailure { mutable.value = mutable.value.copy(state = "LOST", reason = it.message.orEmpty()) }
+    }
+    fun pauseRun(run: String, owner: AgentRunController, reason: String) {
+        owner.pause()
+        if (controller !== owner || mutable.value.run != run) return
+        runCatching { nodeGate.commit { update(call("pause", Bundle().apply {
+            putString("run", run); putString("reason", reason.take(500))
+        })) } }
     }
     fun retain(run: String) {
         if (mutable.value.run != run) return
-        runCatching { synchronized(nodeCommitLock) { update(call("retain", Bundle().apply { putString("run", run) })) } }
-        controller = null
+        runCatching { nodeGate.commit { update(call("retain", Bundle().apply { putString("run", run) })) } }
+        if (mutable.value.run == run) controller = null
     }
     fun takeover() {
         pause()
@@ -95,13 +108,16 @@ internal object DisplaySessionStore {
         controller = null
     }
     fun close() {
-        pause()
-        controller?.cancel()
-        if (broker != null && mutable.value.session.isNotEmpty()) call("close")
-        broker = null
-        mutable.value = Snapshot()
-        controller = null
-        AgentExecutionService.release(RESOURCE)
+        try {
+            pause()
+            controller?.cancel()
+            if (broker != null && mutable.value.session.isNotEmpty()) call("close")
+        } finally {
+            broker = null
+            mutable.value = Snapshot()
+            controller = null
+            AgentExecutionService.release(RESOURCE)
+        }
     }
 
     /** Use the observation's captured epoch. Never silently replace it with the current one. */
@@ -114,21 +130,23 @@ internal object DisplaySessionStore {
     /** Pause acknowledgement and explicit task migration wait until node submission has returned.
      * Automatic launcher takeover is possible only after retain(), which uses this same gate.
      */
-    fun <T> commitNode(run: String, epoch: Long, block: () -> T): T = synchronized(nodeCommitLock) {
+    fun <T> commitNode(run: String, epoch: Long, block: () -> T): T = nodeGate.commit {
         action("validate", run, epoch)
         block()
     }
 
     @Synchronized private fun update(result: Bundle): Snapshot {
+        check(result.getBinder("_connection") === broker && broker != null) { "工作屏连接已更换" }
         val snapshot = Snapshot(
             session = result.getString("session").orEmpty(), display = result.getInt("display", -1),
             user = result.getInt("user", -1), epoch = result.getLong("epoch"),
             state = result.getString("state").orEmpty(), reason = result.getString("reason").orEmpty(),
             run = result.getString("run").orEmpty(),
         )
-        if (snapshot.session != mutable.value.session || snapshot.epoch >= mutable.value.epoch) mutable.value = snapshot
+        check(mutable.value.session.isEmpty() || snapshot.session == mutable.value.session) { "工作屏会话已更换" }
+        if (snapshot.epoch >= mutable.value.epoch) mutable.value = snapshot
         AgentExecutionService.refresh()
-        return snapshot
+        return mutable.value
     }
 
     private fun call(op: String, extras: Bundle = Bundle()): Bundle {
@@ -144,6 +162,7 @@ internal object DisplaySessionStore {
             reply.readException()
             val result = reply.readBundle(DisplaySessionStore::class.java.classLoader) ?: error("工作屏返回空结果")
             check(result.getBoolean("ok")) { result.getString("message") ?: "工作屏操作失败；请重新观察" }
+            result.putBinder("_connection", remote)
             return result
         } finally { data.recycle(); reply.recycle() }
     }

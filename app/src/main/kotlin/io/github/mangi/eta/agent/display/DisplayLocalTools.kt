@@ -9,6 +9,8 @@ import android.view.accessibility.AccessibilityNodeInfo
 import io.github.mangi.eta.agent.media.AgentImageCodec
 import io.github.mangi.eta.agent.accessibility.TextEditPlanner
 import io.github.mangi.eta.agent.model.AgentModelClient
+import io.github.mangi.eta.agent.model.AgentScreenObservationContract
+import io.github.mangi.eta.agent.runtime.AgentRunCancelledException
 import io.github.mangi.eta.agent.runtime.AgentRunController
 import java.util.UUID
 import org.json.JSONObject
@@ -84,7 +86,8 @@ internal class DisplayLocalTools(
             }
         } catch (failure: Exception) {
             clearObservation()
-            DisplaySessionStore.pause()
+            if (failure is AgentRunCancelledException) throw failure
+            DisplaySessionStore.pauseRun(run, controller, failure.cause?.message ?: failure.message.orEmpty())
             AgentModelClient.ToolResult(JSONObject().put("ok", false).put("code", "WORK_DISPLAY_PAUSED")
                 .put("message", "${failure.cause?.message ?: failure.message}。已暂停；请查看工作屏，继续前重新观察，或主动接管。已提交动作不会重放。")
                 .toString())
@@ -102,9 +105,10 @@ internal class DisplayLocalTools(
         clearObservation()
         val state = DisplaySessionStore.refresh()
         DisplaySessionStore.action("validate", run, state.epoch)
-        val tree = DisplayAccessibility.tree(state.display, args.optInt("max_nodes", 120))
+        val options = AgentScreenObservationContract.resolve(args)
+        val tree = DisplayAccessibility.tree(state.display, options.maxNodes)
         try {
-            val image = if (args.optBoolean("include_screenshot", true)) {
+            val image = if (options.includeScreenshot) {
                 val bitmap = DisplayAccessibility.screenshot(state.display)
                 try {
                     check(bitmap.width == DisplayProtocol.WIDTH && bitmap.height == DisplayProtocol.HEIGHT) {
@@ -114,7 +118,7 @@ internal class DisplayLocalTools(
                 } finally { bitmap.recycle() }
             } else null
             DisplaySessionStore.action("validate", run, state.epoch)
-            DisplayAccessibility.tree(state.display, args.optInt("max_nodes", 120)).use { after ->
+            DisplayAccessibility.tree(state.display, options.maxNodes).use { after ->
                 check(after.window == tree.window && after.signature == tree.signature) { "截图期间窗口内容发生变化，请继续后重新观察" }
             }
             val id = UUID.randomUUID().toString()
@@ -123,7 +127,8 @@ internal class DisplayLocalTools(
                 .put("observation_id", id).put("window_id", tree.window)
                 .put("focus", JSONObject().put("package", tree.packageName))
                 .put("screen", JSONObject().put("width", DisplayProtocol.WIDTH).put("height", DisplayProtocol.HEIGHT))
-                .put("ui_nodes", tree.json()).put("coordinate_contract", "原始截图像素 = 工作屏坐标；动作后必须重新观察")
+                .put("ui_nodes", if (options.includeUiTree) tree.json() else org.json.JSONArray())
+                .put("coordinate_contract", "原始截图像素 = 工作屏坐标；动作后必须重新观察")
                 .put("note", "普通输入法不可用；文字通过节点 setText。授权/支付/不兼容页面需要暂停并主动接管")
             return AgentModelClient.ToolResult(json.toString(), listOfNotNull(image))
         } catch (failure: Exception) { tree.close(); throw failure }
@@ -179,6 +184,7 @@ internal class DisplayLocalTools(
         check(node.value.refresh() && DisplayAccessibility.identity(node.value) == node.identity) { "节点已失效" }
         check(node.value.isEnabled) { "目标节点不可用" }
         val insertion = if (name == "input_text" && args.optString("mode", "append") == "append") {
+            check(node.value.isFocused) { "追加输入要求节点已经获得输入焦点" }
             check(!node.value.isPassword) { "密码节点不能安全追加文字，请使用 replace_text 或主动接管" }
             TextEditPlanner.insertAtSelection(node.value.text?.toString().orEmpty(), args.getString("text"),
                 node.value.textSelectionStart, node.value.textSelectionEnd) ?: error("无法确定光标位置，请使用 replace_text")
@@ -229,14 +235,17 @@ internal class DisplayLocalTools(
 
     private fun waitFor(name: String, args: JSONObject): AgentModelClient.ToolResult {
         val expected = args.getString(if (name == "wait_for_text") "text" else "package_name")
-        val deadline = SystemClock.uptimeMillis() + args.optLong("timeout_ms", 5000).coerceIn(0, 15000)
+        val deadline = SystemClock.uptimeMillis() + args.optLong("timeout_ms", 10000).coerceIn(0, 60000)
+        val exact = args.optString("match", "contains") == "exact"
+        val includeDesc = args.optBoolean("include_desc", true)
+        fun matches(text: CharSequence?): Boolean = if (exact) text?.toString() == expected else text?.contains(expected) == true
         do {
             controller.throwIfCancelled()
             val state = DisplaySessionStore.refresh()
             DisplaySessionStore.action("validate", run, state.epoch)
             DisplayAccessibility.tree(state.display).use { tree ->
                 if (if (name == "wait_for_package") tree.packageName == expected else tree.nodes.any {
-                        !it.value.isPassword && (it.value.text?.contains(expected) == true || it.value.contentDescription?.contains(expected) == true)
+                        !it.value.isPassword && (matches(it.value.text) || (includeDesc && matches(it.value.contentDescription)))
                     }) return success("条件已出现，请重新观察后操作")
             }
             SystemClock.sleep(250)
