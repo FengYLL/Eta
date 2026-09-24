@@ -30,6 +30,7 @@ internal class AgentExecutionService : Service() {
         super.onCreate()
         instance = this
         leases.attachOwner(owner)
+        resources.attachOwner(owner)
         val manager = getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL, getString(R.string.execution_channel), NotificationManager.IMPORTANCE_LOW),
@@ -40,6 +41,7 @@ internal class AgentExecutionService : Service() {
     private fun ensureForeground() {
         if (foregroundActive || startRejected) return
         leases.attachOwner(owner)
+        resources.attachOwner(owner)
         try {
             startForeground(NOTIFICATION_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
             foregroundActive = true
@@ -65,19 +67,19 @@ internal class AgentExecutionService : Service() {
     override fun onDestroy() {
         if (instance === this) instance = null
         // 销毁时同样收回本服务拥有的任务。回收在独立有界工作线程上完成，不阻塞 Main。
-        stopQueue.close(leases.drainOwner(owner))
+        stopQueue.close(leases.drainOwner(owner) + resources.drainOwner(owner))
         super.onDestroy()
     }
 
     private fun stopTasks(startFailed: Boolean = false) {
-        val callbacks = leases.drain(startFailed)
+        val callbacks = leases.drain(startFailed) + if (startFailed) resources.drain() else emptyList()
         stopQueue.submit(callbacks) {
             mainHandler.post { if (instance === this) refreshNotification() }
         }
     }
 
     private fun refreshNotification() {
-        if (leases.closeOwnerIfIdle(owner)) {
+        if (resources.count() == 0 && leases.closeOwnerIfIdle(owner) && resources.closeOwnerIfIdle(owner)) {
             foregroundActive = false
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
@@ -95,7 +97,7 @@ internal class AgentExecutionService : Service() {
             this, 1, Intent(this, AgentExecutionService::class.java).setAction(ACTION_STOP),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        return Notification.Builder(this, CHANNEL)
+        val builder = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(getString(R.string.execution_title))
             .setContentText(getString(R.string.execution_summary, leases.count()))
@@ -103,7 +105,15 @@ internal class AgentExecutionService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .addAction(Notification.Action.Builder(null, getString(R.string.execution_stop), stop).build())
-            .build()
+        if (resources.count() > 0) {
+            val workDisplay = PendingIntent.getActivity(this, 2,
+                Intent(this, io.github.mangi.eta.agent.display.WorkDisplayActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            builder.setContentText(getString(R.string.work_display_title) + " · " +
+                io.github.mangi.eta.agent.display.DisplaySessionStore.state.value.reason)
+            builder.addAction(Notification.Action.Builder(null, getString(R.string.work_display_title), workDisplay).build())
+        }
+        return builder.build()
     }
 
     companion object {
@@ -111,6 +121,7 @@ internal class AgentExecutionService : Service() {
         private const val NOTIFICATION_ID = 1107
         private const val ACTION_STOP = "io.github.mangi.eta.action.STOP_USER_EXECUTION"
         private val leases = ExecutionLeaseRegistry()
+        private val resources = ExecutionLeaseRegistry()
         private val ownerSequence = AtomicLong()
         private val mainHandler = Handler(Looper.getMainLooper())
         @Volatile private var instance: AgentExecutionService? = null
@@ -120,15 +131,17 @@ internal class AgentExecutionService : Service() {
             context: Context,
             id: String,
             allowBoundFallback: Boolean = false,
+            retainedResource: Boolean = false,
             onStop: () -> Unit,
         ): Boolean {
             if (instance?.startRejected == true) return false
-            if (!leases.acquire(id, allowBoundFallback, onStop)) return true
+            val registry = if (retainedResource) resources else leases
+            if (!registry.acquire(id, allowBoundFallback, onStop)) return true
             return try {
                 context.applicationContext.startForegroundService(Intent(context, AgentExecutionService::class.java))
                 true
             } catch (failure: RuntimeException) {
-                leases.release(id)
+                registry.release(id)
                 AndroidAgentLogger.warn("Execution service start rejected: type=${failure.safeLogType()}")
                 false
             }
@@ -136,7 +149,9 @@ internal class AgentExecutionService : Service() {
 
         fun release(id: String) {
             leases.release(id)
+            resources.release(id)
             mainHandler.post { instance?.refreshNotification() }
         }
+        fun refresh() { mainHandler.post { instance?.refreshNotification() } }
     }
 }

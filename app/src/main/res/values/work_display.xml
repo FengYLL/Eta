@@ -1,0 +1,21 @@
+<resources>
+    <string name="work_display_title">工作屏（实验性）</string>
+    <string name="work_display_description">复用当前用户已登录的应用。需要 LSPosed 系统框架作用域并重启手机。首次执行可迁移主屏应用；执行期间 ETA 优先占用，其他应用可照常使用。不支持的页面会暂停，主动接管后才回主屏。</string>
+    <string name="work_display_enable">新任务使用独立工作屏</string>
+    <string name="work_display_create">创建 / 检查</string>
+    <string name="work_display_preview">刷新预览</string>
+    <string name="work_display_pause">暂停</string>
+    <string name="work_display_resume">继续</string>
+    <string name="work_display_takeover">接管到主屏</string>
+    <string name="work_display_close">关闭工作屏</string>
+    <string name="work_display_snapshot_note">预览是按需截图，不支持触摸。结果页会保留，关闭将销毁副屏页面。接管可能重建页面。普通输入法、全局操作和终端不在隔离模式中提供。</string>
+    <string name="work_display_preview_unavailable">页面已接管或会话已变化，请重新检查工作屏。</string>
+    <string name="work_display_busy">正在处理…</string>
+    <string name="work_display_running">运行中 · ETA 占用应用</string>
+    <string name="work_display_paused">已暂停 · 可继续或主动接管</string>
+    <string name="work_display_retained">结果页已保留 · 从主屏打开同一应用即可接管</string>
+    <string name="work_display_human">已接管 · 关闭工作屏后可开始新会话</string>
+    <string name="work_display_ready">工作屏就绪 · 返回对话发起任务</string>
+    <string name="work_display_lost">连接丢失 · 不会重放旧动作</string>
+    <string name="work_display_closed">工作屏已关闭</string>
+</resources>

@@ -288,6 +288,8 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                         startRun(
                             request.copy(
                                 config = AgentRuntimePolicy.constrain(request.config, permissions),
+                                isolatedDisplay = request.isolatedDisplay ||
+                                    io.github.mangi.eta.agent.display.DisplaySessionStore.enabled(this),
                             ),
                             replyTo,
                         )
@@ -320,6 +322,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         val session = AgentRuntimeSession(
             runId = request.runId,
             operation = request.operation,
+            isolatedDisplay = request.isolatedDisplay,
             eventSink = { event -> sendEventTo(replyTo, event) },
             resultSink = { result -> sendResultTo(replyTo, result) },
         )
@@ -402,6 +405,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         entrySurfaceGuard: EntrySurfaceGuard?,
     ) {
         if (activeSession !== session) return
+        if (session.isolatedDisplay) {
+            mainHandler.post { if (activeSession === session) state.value = state.value.applyEvent(event) }
+            return
+        }
         val revealsForegroundOperation = AgentOverlayVisibilityPolicy.shouldRevealFor(event)
         val requiresEntrySurfaceDismissal =
             AgentOverlayVisibilityPolicy.shouldDismissEntrySurfaceFor(event)

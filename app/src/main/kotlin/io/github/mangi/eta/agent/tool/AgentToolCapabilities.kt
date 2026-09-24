@@ -22,8 +22,10 @@ internal data class AgentToolCapabilities(
     val usageAllowed: Boolean = true,
     val locationAllowed: Boolean = true,
     val colorOs: Boolean = true,
+    val isolatedDisplay: Boolean = false,
 ) {
     fun unavailableCode(name: String): String? {
+        if (isolatedDisplay && !io.github.mangi.eta.agent.display.DisplayToolPolicy.allows(name)) return "DISPLAY_SCOPE_REQUIRED"
         val requirement = AgentToolRequirements.find(name) ?: return "UNKNOWN_TOOL"
         if (requirement.rootRequirement == RootRequirement.REQUIRED && !rootAvailable) return "ROOT_REQUIRED"
         if (requirement.lsposedRequirement == LsposedRequirement.REQUIRED && !lsposedAvailable) return "LSPOSED_REQUIRED"

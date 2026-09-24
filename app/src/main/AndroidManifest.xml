@@ -30,6 +30,8 @@
         android:protectionLevel="signature" />
 
     <uses-permission android:name="io.github.mangi.eta.permission.CONTROL_ACCESSIBILITY_PROTECTION" />
+    <permission android:name="io.github.mangi.eta.permission.CONTROL_WORK_DISPLAY" android:protectionLevel="signature" />
+    <uses-permission android:name="io.github.mangi.eta.permission.CONTROL_WORK_DISPLAY" />
 
     <queries>
         <package android:name="com.google.android.googlequicksearchbox" />
@@ -53,6 +55,9 @@
         android:localeConfig="@xml/locales_config"
         android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@mipmap/ic_launcher_round">
+
+        <activity android:name=".agent.display.WorkDisplayActivity" android:exported="false"
+            android:label="@string/work_display_title" android:theme="@style/Theme.Eta" />
 
         <activity
             android:name=".ui.MainActivity"

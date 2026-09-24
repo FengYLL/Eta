@@ -1,6 +1,8 @@
 package io.github.mangi.eta.agent.runtime
 
 import android.content.Context
+import io.github.mangi.eta.agent.display.DisplayLocalTools
+import io.github.mangi.eta.agent.display.DisplayToolPolicy
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityKeeper
 import io.github.mangi.eta.agent.model.AgentConversationCodec
 import io.github.mangi.eta.agent.model.AgentConversationToolCatalog
@@ -69,6 +71,7 @@ internal class AgentRuntimeRunExecutor(
         val archivedEvents = mutableListOf<AgentEvent>()
         var entrySurfaceGuard: EntrySurfaceGuard? = null
         var toolExecutor: AutoCloseable? = null
+        var displayTools: DisplayLocalTools? = null
         var toolsBinding: AgentRunController.ResourceBinding? = null
         var response: AgentModelClient.ModelResponse.Text? = null
         var cancelled = false
@@ -77,7 +80,7 @@ internal class AgentRuntimeRunExecutor(
 
         val result = try {
             checkpointRecorder = AgentRunCheckpointRecorder.create(appContext, request)
-            entrySurfaceGuard = EntrySurfaceGuard.from(
+            entrySurfaceGuard = if (request.isolatedDisplay) null else EntrySurfaceGuard.from(
                 handoff = request.handoff,
                 logger = AndroidAgentLogger,
                 etaVoiceSurfaceDismissal = {
@@ -134,7 +137,7 @@ internal class AgentRuntimeRunExecutor(
                 AgentMemoryContext.DISABLED
             }
             val pendingSkillConflict = PendingSkillConflictCapabilityParser.parse(request.history)
-            val mcpSnapshot = runBlocking {
+            val mcpSnapshot = if (request.isolatedDisplay) McpRunSnapshot.EMPTY else runBlocking {
                 runCatching { McpRunSnapshot.load() }.getOrElse { throwable ->
                     AndroidAgentLogger.warnThrottled("agent_mcp_snapshot_failed") {
                         "MCP tool snapshot unavailable: type=${throwable.safeLogType()}"
@@ -143,6 +146,11 @@ internal class AgentRuntimeRunExecutor(
                 }
             }
             val mcpTools = JSONArray().also(mcpSnapshot::appendModelTools)
+            if (request.isolatedDisplay && request.operation == AgentRuntimeWire.OP_CHAT) {
+                val accessibility = AgentAccessibilityKeeper.ensureEnabledForGuiOperation(appContext)
+                check(accessibility.available) { accessibility.message }
+                displayTools = DisplayLocalTools(appContext, request.runId, runController)
+            }
             val executor = AgentLocalTools(
                 context = appContext,
                 logger = AndroidAgentLogger,
@@ -174,7 +182,10 @@ internal class AgentRuntimeRunExecutor(
                 beforeToolExecution = { toolName ->
                     val requiresAccessibility =
                         AgentToolRequirements.requiresAccessibility(toolName)
-                    if (
+                    if (request.isolatedDisplay) {
+                        if (DisplayToolPolicy.allows(toolName)) ToolExecutionDecision.Allow
+                        else ToolExecutionDecision.Reject("DISPLAY_SCOPE_REQUIRED", "此工具不能隔离到工作屏")
+                    } else if (
                         !requiresAccessibility &&
                         !AgentOverlayVisibilityPolicy.requiresEntrySurfaceDismissal(toolName)
                     ) {
@@ -212,8 +223,11 @@ internal class AgentRuntimeRunExecutor(
                 local = executor,
                 mcp = McpToolExecutor(mcpSnapshot),
             )
-            toolExecutor = routingExecutor
-            toolsBinding = runController.register(routingExecutor::close)
+            toolExecutor = AutoCloseable {
+                displayTools?.close()
+                routingExecutor.close()
+            }
+            toolsBinding = runController.register { toolExecutor?.close() }
             timing.preparationFinished(skillContext.installedSkills.size)
             val historyTool = conversationId?.let { id ->
                 ConversationHistoryTool {
@@ -225,10 +239,12 @@ internal class AgentRuntimeRunExecutor(
             }
             val runTools = JSONArray(mcpTools.toString()).also { tools ->
                 if (historyTool != null) tools.put(AgentConversationToolCatalog.schema())
-                if (characterMemoryTools != null && memoryEnabled) CharacterMemoryTools.appendSchemas(tools)
+                if (!request.isolatedDisplay && characterMemoryTools != null && memoryEnabled) CharacterMemoryTools.appendSchemas(tools)
             }
             val runToolExecutor = AgentModelClient.ToolExecutor { call ->
-                if (call.name == AgentConversationToolCatalog.READ_HISTORY && historyTool != null) {
+                if (displayTools != null && (call.name in DisplayToolPolicy.gui || !DisplayToolPolicy.allows(call.name))) {
+                    displayTools!!.execute(call)
+                } else if (call.name == AgentConversationToolCatalog.READ_HISTORY && historyTool != null) {
                     historyTool.execute(call)
                 } else if (call.name in CharacterMemoryTools.NAMES && characterMemoryTools != null) {
                     characterMemoryTools.execute(call)
@@ -252,7 +268,7 @@ internal class AgentRuntimeRunExecutor(
                     AgentRunCheckpointStore.saveTranscript(appContext, request.runId, transcript)
                     session.updateTranscript(transcript)
                 },
-                capabilitiesProvider = { AgentToolCapabilities.capture(appContext) },
+                capabilitiesProvider = { AgentToolCapabilities.capture(appContext).copy(isolatedDisplay = request.isolatedDisplay) },
                 prompt = request.prompt,
                 assistantScreenContext = request.assistantScreenContext,
                 toolExecutor = runToolExecutor,
@@ -329,6 +345,7 @@ internal class AgentRuntimeRunExecutor(
                 rewriteTargetMessageId = request.rewriteTargetMessageId,
             )
         } finally {
+            runCatching { displayTools?.close() }
             runCatching { toolsBinding?.close() }
             runCatching { toolExecutor?.close() }
         }

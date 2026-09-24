@@ -19,6 +19,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import io.github.mangi.eta.R
@@ -47,6 +48,7 @@ fun AgentToolsScreen(
     modifier: Modifier = Modifier,
 ) {
     val capabilities = rememberDeviceCapabilities()
+    val context = LocalContext.current
     var showAll by rememberSaveable { mutableStateOf(false) }
     val currentListState = rememberLazyListState()
     val allListState = rememberLazyListState()
@@ -67,6 +69,12 @@ fun AgentToolsScreen(
         }
         item(key = "capability-discovery") {
             EtaPreferenceGroup(modifier = Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) {
+                EtaArrowPreference(
+                    title = stringResource(R.string.work_display_title),
+                    summary = stringResource(R.string.work_display_enable),
+                    onClick = { context.startActivity(android.content.Intent(context,
+                        io.github.mangi.eta.agent.display.WorkDisplayActivity::class.java)) },
+                )
                 EtaArrowPreference(
                     title = stringResource(R.string.capability_enhancements),
                     summary = stringResource(R.string.capability_enhancements_summary),

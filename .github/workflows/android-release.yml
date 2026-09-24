@@ -82,7 +82,7 @@ jobs:
           ETA_RELEASE_KEY_PASSWORD: ${{ steps.keystore.outputs.key_password }}
         run: >-
           ./gradlew --no-daemon --no-configuration-cache
-          :app:assembleDebug :app:assembleRelease
+          :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease
 
       - name: 验证并整理 APK
         id: apk
