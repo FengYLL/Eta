@@ -74,6 +74,11 @@ jobs:
             echo "key_password=android" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: 运行单元测试
+        run: >-
+          ./gradlew --no-daemon --no-configuration-cache
+          :app:testDebugUnitTest
+
       - name: 构建 Debug 与 Release APK
         env:
           ETA_RELEASE_STORE_FILE: ${{ runner.temp }}/eta-release.jks
@@ -82,7 +87,7 @@ jobs:
           ETA_RELEASE_KEY_PASSWORD: ${{ steps.keystore.outputs.key_password }}
         run: >-
           ./gradlew --no-daemon --no-configuration-cache
-          :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease
+          :app:assembleDebug :app:assembleRelease
 
       - name: 上传单元测试报告
         if: always()

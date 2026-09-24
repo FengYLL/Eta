@@ -13,6 +13,8 @@ class AgentToolRequirementsTest {
     @Test
     fun everyRegisteredToolHasExactlyOneRequirement() {
         val tools = catalog(root = true)
+        // Roleplay tools are registered by the runtime only for a bound character session.
+        io.github.mangi.eta.agent.roleplay.CharacterMemoryTools.appendSchemas(tools)
         assertEquals(AgentToolRequirements.toolNames, tools.names())
         assertEquals(tools.length(), tools.names().size)
         assertFalse(tools.toString().contains("rootRequirement"))

@@ -10,8 +10,10 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [36], application = android.app.Application::class)
 class BreenoWakeWordBypassTest {
 
     private val context: Context get() = ApplicationProvider.getApplicationContext()
@@ -57,7 +59,7 @@ class BreenoWakeWordBypassTest {
     }
 
     @Test
-    fun customModelDisabledAlwaysReturnsNull() {
+    fun customModelDisabledStillAllowsExplicitAgentPrefix() {
         val sharedPrefs = context.getSharedPreferences("test_breeno_prefs", Context.MODE_PRIVATE)
         sharedPrefs.edit()
             .putBoolean(Prefs.Keys.AGENT_CUSTOM_MODEL, false)
@@ -66,6 +68,7 @@ class BreenoWakeWordBypassTest {
         Prefs.attachRemote(sharedPrefs)
 
         assertNull(BreenoHooks.resolveCustomModelPrompt("今天天气"))
-        assertNull(BreenoHooks.resolveCustomModelPrompt("/agent 今天天气"))
+        // The explicit experimental prefix is a force-entry independent of the automatic switch.
+        assertEquals("今天天气", BreenoHooks.resolveCustomModelPrompt("/agent 今天天气"))
     }
 }

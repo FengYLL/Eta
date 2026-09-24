@@ -258,8 +258,20 @@ class BreenoRequestImagesTest {
 
     @Test
     fun inlineImageIsNoLongerRejectedByBinderStringBudget() {
+        // A repeated base64 'A' string decodes to zero bytes, not a PNG. Exercise the IPC
+        // budget with a real, nontrivially compressible image so decoding is also validated.
+        val bitmap = android.graphics.Bitmap.createBitmap(512, 512, android.graphics.Bitmap.Config.ARGB_8888)
+        val random = java.util.Random(42)
+        bitmap.setPixels(IntArray(512 * 512) { random.nextInt() or (0xff shl 24) }, 0, 512, 0, 0, 512, 512)
+        val encoded = try {
+            java.io.ByteArrayOutputStream().use { output ->
+                assertTrue(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, output))
+                android.util.Base64.encodeToString(output.toByteArray(), android.util.Base64.NO_WRAP)
+            }
+        } finally { bitmap.recycle() }
+        assertTrue(encoded.length > 300_000)
         val snapshot = BreenoRequestImages.captureText(
-            text = "data:image/png;base64," + "A".repeat(300_000),
+            text = "data:image/png;base64,$encoded",
             source = "image.data",
         )
 
