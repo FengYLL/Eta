@@ -739,7 +739,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun requestPause() {
-        activeSession?.controller?.pause()
+        val session = activeSession
+        if (session?.isolatedDisplay == true) {
+            thread(name = "work-display-pause") { session.controller.pause() }
+        } else session?.controller?.pause()
         state.value = state.value.copy(
             phase = AgentOverlayPhase.PAUSED,
             status = AgentOverlayStatus.Paused,
@@ -747,7 +750,10 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
     }
 
     private fun requestResume() {
-        activeSession?.controller?.resume()
+        val session = activeSession
+        if (session?.isolatedDisplay == true) {
+            thread(name = "work-display-resume") { runCatching { session.controller.resume() } }
+        } else session?.controller?.resume()
         state.value = state.value.copy(
             phase = AgentOverlayPhase.RUNNING,
             status = AgentOverlayStatus.Continuing,

@@ -7,7 +7,6 @@ import android.view.accessibility.AccessibilityNodeInfo
 import io.github.mangi.eta.agent.accessibility.AgentAccessibilityService
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -36,9 +35,13 @@ internal object DisplayAccessibility {
         val service = AgentAccessibilityService.current() ?: error("请先启用 Eta 无障碍服务")
         val windows = service.windowsOnAllDisplays[displayId].orEmpty()
         val window = windows.filter { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION }
-            .sortedWith(compareByDescending<android.view.accessibility.AccessibilityWindowInfo> { it.isFocused }.thenByDescending { it.layer })
+            .sortedByDescending { it.layer }
             .firstOrNull() ?: error("副屏没有可读取的应用窗口，请先 launch_app；不回退主屏")
+        check(windows.none { it.layer > window.layer && it.type != android.view.accessibility.AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY }) {
+            "副屏被系统窗口遮挡，请主动接管；不操作下层页面"
+        }
         val root = window.root ?: error("副屏应用不提供无障碍节点，请主动接管")
+        val packageName = root.packageName?.toString().orEmpty()
         val nodes = mutableListOf<Node>()
         val pending = java.util.ArrayDeque<AccessibilityNodeInfo>()
         pending.add(root)
@@ -51,7 +54,7 @@ internal object DisplayAccessibility {
                 if (node.isVisibleToUser && !bounds.isEmpty) nodes += Node(nodes.size, node, bounds, identity(node, bounds))
                 else @Suppress("DEPRECATION") node.recycle()
             }
-            return Tree(window.id, root.packageName?.toString().orEmpty(), nodes)
+            return Tree(window.id, packageName, nodes)
         } catch (failure: Exception) {
             nodes.forEach { @Suppress("DEPRECATION") it.value.recycle() }
             throw failure
@@ -62,13 +65,13 @@ internal object DisplayAccessibility {
 
     fun identity(node: AccessibilityNodeInfo, bounds: Rect = Rect().also(node::getBoundsInScreen)): String =
         listOf(node.windowId, node.uniqueId, node.packageName, node.viewIdResourceName, node.className,
-            if (node.isPassword) "password" else node.text, node.contentDescription, bounds.toShortString(), node.isEditable).joinToString("\u0001")
+            if (node.isPassword) "password" else node.text, node.contentDescription, bounds.toShortString(), node.isEditable,
+            node.isFocused, node.textSelectionStart, node.textSelectionEnd, node.isEnabled).joinToString("\u0001")
 
     fun screenshot(displayId: Int): Bitmap {
         require(displayId > 0)
         val service = AgentAccessibilityService.current() ?: error("请先启用 Eta 无障碍服务")
         val result = CompletableFuture<Bitmap>()
-        val expired = AtomicBoolean(false)
         service.takeScreenshot(displayId, service.mainExecutor, object : AccessibilityService.TakeScreenshotCallback {
             override fun onSuccess(screenshot: AccessibilityService.ScreenshotResult) {
                 try {
@@ -77,7 +80,7 @@ internal object DisplayAccessibility {
                         try { hardware.copy(Bitmap.Config.ARGB_8888, false) ?: error("副屏截图转换失败") }
                         finally { hardware.recycle() }
                     }
-                    if (expired.get() || !result.complete(bitmap)) bitmap.recycle()
+                    if (!result.complete(bitmap)) bitmap.recycle()
                 } catch (failure: Exception) { result.completeExceptionally(failure) }
             }
             override fun onFailure(errorCode: Int) {
@@ -86,8 +89,7 @@ internal object DisplayAccessibility {
         })
         return try { result.get(4, TimeUnit.SECONDS) }
         catch (failure: Exception) {
-            expired.set(true)
-            if (result.isDone && !result.isCompletedExceptionally) result.getNow(null)?.recycle()
+            if (!result.cancel(false) && !result.isCompletedExceptionally) result.getNow(null)?.recycle()
             throw failure
         }
     }

@@ -28,6 +28,7 @@ internal object DisplaySessionStore {
     val state = mutable.asStateFlow()
     private val anchor = Binder()
     private val nodeGate = DisplayActionGate()
+    private val connectionGeneration = java.util.concurrent.atomic.AtomicLong()
     @Volatile private var broker: IBinder? = null
     @Volatile private var controller: AgentRunController? = null
     private const val RESOURCE = "work-display"
@@ -44,8 +45,9 @@ internal object DisplaySessionStore {
         try {
             val connection = connect(context)
             broker = connection
+            val generation = connectionGeneration.incrementAndGet()
             connection.linkToDeath({
-                if (broker === connection) {
+                if (broker === connection && generation == connectionGeneration.get()) {
                     broker = null
                     mutable.value = mutable.value.copy(state = "LOST", reason = "系统显示服务已断开；旧动作不会重放")
                     try { runCatching { controller?.pause() } }
@@ -113,6 +115,7 @@ internal object DisplaySessionStore {
             controller?.cancel()
             if (broker != null && mutable.value.session.isNotEmpty()) call("close")
         } finally {
+            connectionGeneration.incrementAndGet()
             broker = null
             mutable.value = Snapshot()
             controller = null
@@ -137,6 +140,7 @@ internal object DisplaySessionStore {
 
     @Synchronized private fun update(result: Bundle): Snapshot {
         check(result.getBinder("_connection") === broker && broker != null) { "工作屏连接已更换" }
+        check(result.getLong("_generation") == connectionGeneration.get()) { "工作屏连接代次已更换" }
         val snapshot = Snapshot(
             session = result.getString("session").orEmpty(), display = result.getInt("display", -1),
             user = result.getInt("user", -1), epoch = result.getLong("epoch"),
@@ -151,6 +155,7 @@ internal object DisplaySessionStore {
 
     private fun call(op: String, extras: Bundle = Bundle()): Bundle {
         val remote = broker ?: error("工作屏服务未连接；请检查 LSPosed 系统框架作用域并重启手机")
+        val generation = connectionGeneration.get()
         val data = Parcel.obtain(); val reply = Parcel.obtain()
         try {
             extras.putInt("version", DisplayProtocol.VERSION)
@@ -163,6 +168,7 @@ internal object DisplaySessionStore {
             val result = reply.readBundle(DisplaySessionStore::class.java.classLoader) ?: error("工作屏返回空结果")
             check(result.getBoolean("ok")) { result.getString("message") ?: "工作屏操作失败；请重新观察" }
             result.putBinder("_connection", remote)
+            result.putLong("_generation", generation)
             return result
         } finally { data.recycle(); reply.recycle() }
     }

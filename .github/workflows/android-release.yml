@@ -84,6 +84,17 @@ jobs:
           ./gradlew --no-daemon --no-configuration-cache
           :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease
 
+      - name: 上传单元测试报告
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: unit-test-reports
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/test-results/testDebugUnitTest/
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: 验证并整理 APK
         id: apk
         run: |

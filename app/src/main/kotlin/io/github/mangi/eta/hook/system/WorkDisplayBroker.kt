@@ -200,6 +200,13 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
         check(DisplayReflection.call(ActivityManager::class.java, "getCurrentUser") == s.userId) { "Android 用户已切换" }
         check(!context.getSystemService(KeyguardManager::class.java).isKeyguardLocked) { "手机已锁定，请解锁后继续" }
         check(s.display.display.isValid) { "工作屏已被系统移除" }
+        val size = android.graphics.Point()
+        @Suppress("DEPRECATION")
+        s.display.display.getRealSize(size)
+        check(size.x == DisplayProtocol.WIDTH && size.y == DisplayProtocol.HEIGHT) { "工作屏几何已改变，请关闭后重新创建" }
+        check(s.display.display.flags and DisplayProtocol.REQUIRED_DISPLAY_FLAGS == DisplayProtocol.REQUIRED_DISPLAY_FLAGS) {
+            "独立焦点标志已失效"
+        }
     }
 
     private fun requireAction(s: Session, r: Bundle, remember: Boolean = true) {
@@ -325,7 +332,7 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
 
     /** Called under framework task locks. No IPC, disk or waits in any guard below. */
     fun guardStart(starter: Any, request: Any): Boolean {
-        if (sessions.isEmpty()) return true
+        if (sessions.isEmpty() || !healthy) return true
         val info = DisplayReflection.get(request, "activityInfo") as? ActivityInfo ?: return true
         val targetUser = info.applicationInfo.uid / 100000
         val source = (DisplayReflection.get(request, "resultTo") as? IBinder)?.let {
@@ -391,7 +398,7 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
     }
 
     fun guardReparent(container: Any, parent: Any): Boolean {
-        if (sessions.isEmpty()) return true
+        if (sessions.isEmpty() || !healthy) return true
         val from = displayOf(container)
         val to = displayOf(parent)
         if (from == to || from < 0 || to < 0) return true
@@ -400,7 +407,7 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
     }
 
     fun guardFront(service: Any, taskId: Int, recents: Boolean): Boolean {
-        if (sessions.isEmpty()) return true
+        if (sessions.isEmpty() || !healthy) return true
         val display = synchronized(DisplayReflection.get(service, "mGlobalLock")!!) {
             val root = DisplayReflection.get(service, "mRootWindowContainer")!!
             DisplayReflection.call(root, "anyTaskForId", taskId, 0)?.let(::displayOf)
@@ -417,10 +424,15 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
     fun fault(failure: Throwable) {
         healthy = false
         sessions.values.forEach { it.reason = "系统路由守卫失效：${failure.javaClass.simpleName}"; it.lease.lost() }
+        // Do not keep a broken hook blocking unrelated Android launches. Revoke first and release
+        // off the framework task lock; DESTROY_CONTENT_ON_REMOVAL prevents migration as cleanup.
+        worker.post { synchronized(actionLock) { sessions.values.toList().forEach { runCatching { destroy(it) } } } }
     }
 
     fun recentsOptions(taskId: Int, original: Bundle?): Bundle? {
         if (sessions.values.none { taskId in it.taskIds && it.lease.state == DisplayLease.State.HUMAN }) return original
-        return (original?.let(ActivityOptions::fromBundle) ?: ActivityOptions.makeBasic()).setLaunchDisplayId(0).toBundle()
+        val options = original?.let { DisplayReflection.call(ActivityOptions::class.java, "fromBundle", it) as? ActivityOptions }
+            ?: ActivityOptions.makeBasic()
+        return options.setLaunchDisplayId(0).toBundle()
     }
 }
