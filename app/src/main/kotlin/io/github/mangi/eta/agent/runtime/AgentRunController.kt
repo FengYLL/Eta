@@ -10,6 +10,7 @@ import kotlin.concurrent.withLock
 
 internal class AgentRunController {
     private val resources = CopyOnWriteArraySet<CancellableResource>()
+    private val pauseListeners = CopyOnWriteArraySet<(Boolean) -> Unit>()
 
     @Volatile
     private var cancelled = false
@@ -73,7 +74,12 @@ internal class AgentRunController {
      * 在工作线程的检查点调用，不会阻塞调用方线程。
      */
     fun pause() {
-        lock.withLock { paused = true }
+        lock.withLock {
+            if (!paused && !cancelled) {
+                paused = true
+                pauseListeners.forEach { it(true) }
+            }
+        }
     }
 
     /**
@@ -81,9 +87,19 @@ internal class AgentRunController {
      */
     fun resume() {
         lock.withLock {
+            if (paused && !cancelled) pauseListeners.forEach { it(false) }
             paused = false
             pauseCondition.signalAll()
         }
+    }
+
+    /** Resume observers must successfully renew any privileged lease before the loop wakes. */
+    fun observePause(listener: (Boolean) -> Unit): ResourceBinding {
+        lock.withLock {
+            pauseListeners.add(listener)
+            if (paused) listener(true)
+        }
+        return ResourceBinding { pauseListeners.remove(listener) }
     }
 
     /**

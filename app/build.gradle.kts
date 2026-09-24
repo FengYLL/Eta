@@ -32,8 +32,8 @@ android {
         minSdk = 34
         targetSdk = 36
         // versionCode 规则：yyyyMMdd + 两位当日序号（01 起），发版时随 versionName 一起手动递增。
-        versionCode = 2026092302
-        versionName = "3.0.5"
+        versionCode = 2026092401
+        versionName = "3.0.5-workdisplay.1"
     }
 
     signingConfigs {
@@ -146,4 +146,5 @@ dependencies {
     testImplementation(libs.json)
     testImplementation(libs.room.testing)
     testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.core)
 }

@@ -28,6 +28,19 @@ import org.robolectric.annotation.Config
 @Config(sdk = [36])
 class AgentRuntimeWireTest {
     @Test
+    fun isolatedDisplayRoundTripsAndOldSendersDefaultToMainScreen() {
+        val request = AgentRuntimeWire.RunRequest(
+            runId = "work-screen", prompt = "open app", images = emptyList(),
+            config = AgentModelClient.ModelConfig(baseUrl = "https://example.invalid", apiKey = "test", model = "test", systemPrompt = ""),
+            isolatedDisplay = true,
+        )
+        val bundle = AgentRuntimeWire.toLegacyBundle(request)
+        assertTrue(AgentRuntimeWire.runRequestFromBundle(bundle).isolatedDisplay)
+        bundle.remove("isolated_display")
+        assertFalse(AgentRuntimeWire.runRequestFromBundle(bundle).isolatedDisplay)
+    }
+
+    @Test
     fun screenshotsKeepExactBytesAndFormatAcrossDescriptorAndInlineTransport() {
         val bitmap = Bitmap.createBitmap(32, 24, Bitmap.Config.ARGB_8888).apply {
             eraseColor(android.graphics.Color.argb(128, 96, 128, 192))

@@ -18,6 +18,7 @@ internal class AgentRuntimeSession(
     eventSink: ((AgentEvent) -> Unit)? = null,
     resultSink: ((AgentRuntimeWire.RunResult) -> Unit)? = null,
     private val operation: String = AgentRuntimeWire.OP_CHAT,
+    val isolatedDisplay: Boolean = false,
 ) {
     private enum class State {
         RUNNING,

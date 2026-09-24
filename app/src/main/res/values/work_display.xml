@@ -1,0 +1,24 @@
+<resources>
+    <string name="work_display_title">Work display (experimental)</string>
+    <string name="work_display_description">Uses apps signed in as the current Android user. Enable the LSPosed system framework scope and restart. Apps may move from the main screen; other apps remain usable. Incompatible pages pause for takeover.</string>
+    <string name="work_display_enable">Use a separate work display for new tasks</string>
+    <string name="work_display_create">Create / check</string>
+    <string name="work_display_preview">Watch live</string>
+    <string name="work_display_preview_waiting">Waiting for the work display</string>
+    <string name="work_display_background">Back · continue in background</string>
+    <string name="work_display_stop">Stop task</string>
+    <string name="work_display_pause">Pause</string>
+    <string name="work_display_resume">Continue</string>
+    <string name="work_display_takeover">Take over</string>
+    <string name="work_display_close">Close display</string>
+    <string name="work_display_snapshot_note">Live view only. Tasks continue when you leave or switch apps; reopen from the notification. Stopping keeps results; closing destroys the display. Unlock before continuing after a screen lock. Taking over may recreate the page.</string>
+    <string name="work_display_preview_unavailable">The page was taken over or the session changed. Check the work display again.</string>
+    <string name="work_display_busy">Working…</string>
+    <string name="work_display_running">Running · Eta is using the app</string>
+    <string name="work_display_paused">Paused · continue or take over</string>
+    <string name="work_display_retained">Result kept · open the app on the main screen to take over</string>
+    <string name="work_display_human">Taken over · close the display before starting a new session</string>
+    <string name="work_display_ready">Ready · return to chat to start a task</string>
+    <string name="work_display_lost">Connection lost · previous actions will not replay</string>
+    <string name="work_display_closed">Work display closed</string>
+</resources>

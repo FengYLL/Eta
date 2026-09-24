@@ -74,6 +74,26 @@ jobs:
             echo "key_password=android" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: 工作屏与后台执行回归测试
+        run: >-
+          ./gradlew --no-daemon --no-configuration-cache
+          :app:testDebugUnitTest
+          --tests 'io.github.mangi.eta.agent.display.*'
+          --tests 'io.github.mangi.eta.agent.runtime.ExecutionLeaseRegistryTest'
+          --tests 'io.github.mangi.eta.agent.runtime.ExecutionStopQueueTest'
+          --tests 'io.github.mangi.eta.agent.runtime.AgentRuntimeWireTest'
+
+      - name: 上传工作屏测试报告
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: work-display-tests
+          path: |
+            app/build/reports/tests/testDebugUnitTest/
+            app/build/test-results/testDebugUnitTest/
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: 构建 Debug 与 Release APK
         env:
           ETA_RELEASE_STORE_FILE: ${{ runner.temp }}/eta-release.jks

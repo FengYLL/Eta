@@ -22,8 +22,10 @@ internal data class AgentToolCapabilities(
     val usageAllowed: Boolean = true,
     val locationAllowed: Boolean = true,
     val colorOs: Boolean = true,
+    val isolatedDisplay: Boolean = false,
 ) {
     fun unavailableCode(name: String): String? {
+        if (isolatedDisplay && !io.github.mangi.eta.agent.display.DisplayToolPolicy.allows(name)) return "DISPLAY_SCOPE_REQUIRED"
         val requirement = AgentToolRequirements.find(name) ?: return "UNKNOWN_TOOL"
         if (requirement.rootRequirement == RootRequirement.REQUIRED && !rootAvailable) return "ROOT_REQUIRED"
         if (requirement.lsposedRequirement == LsposedRequirement.REQUIRED && !lsposedAvailable) return "LSPOSED_REQUIRED"
@@ -48,7 +50,9 @@ internal data class AgentToolCapabilities(
             for (index in 0 until rootProjected.length()) {
                 val tool = rootProjected.getJSONObject(index)
                 val name = tool.getJSONObject("function").getString("name")
-                if (unavailableCode(name) == null) visible.put(tool)
+                if (unavailableCode(name) == null) visible.put(
+                    if (isolatedDisplay) io.github.mangi.eta.agent.display.DisplayToolPolicy.project(tool) else tool,
+                )
             }
         }
     }

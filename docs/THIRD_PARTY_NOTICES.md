@@ -141,6 +141,12 @@ SOFTWARE.
 
 OpenAI、Anthropic、Claude、阿里云百炼、Qwen、DeepSeek、Kimi、Xiaomi MiMo、MiniMax、StepFun、Z.ai、ChatGLM、Gemini、Gemma、Grok、Meta、Mistral、豆包、混元、Yi、硅基流动和 OpenRouter 的名称、图标及其他品牌标识归各自权利人所有。Eta 展示这些图标仅用于准确标识用户正在配置的模型服务，不表示这些厂商对 Eta 的赞助、认可或合作关系。OpenAI 图标的使用还应遵循其[品牌规范](https://openai.com/brand/)。
 
+## Operator-on-Android 工作屏参考
+
+独立工作屏参考 [xjyzs/Operator-on-Android](https://github.com/xjyzs/Operator-on-Android/tree/1aad5cac38f4c1833397f03e2e104e2f5aebaa49) 的 `InputControlUtils.kt`、`VirtualDisplayViewer.kt` 和 `VirtualDisplayController.kt`，将前台 Surface / 后台 ImageReader 的切换方式适配到 Eta 的 LSPosed Binder 服务、运行租约和生命周期中。没有引入其完整应用、模型调用或 Root 命令服务。
+
+Copyright (c) 2026 雪霁银装素。MIT License 全文随 APK 保存在 `assets/licenses/operator-on-android.txt`。
+
 ## 可选语言运行时
 
 Eta 不把 uv 或 Node.js 打包进 APK。用户主动安装对应 profile 时，Eta 下载当前固定的最新正式版制品；Debian 使用 Node.js 官方 Linux glibc 发行包，Alpine 使用其稳定仓库中的 `nodejs-current`，uv 按所选发行版下载官方 glibc 或 musl 制品。

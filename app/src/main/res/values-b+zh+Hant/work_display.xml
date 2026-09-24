@@ -1,0 +1,24 @@
+<resources>
+    <string name="work_display_title">工作屏（實驗性）</string>
+    <string name="work_display_description">使用目前使用者已登入的應用程式。需要啟用 LSPosed 系統框架作用域並重新啟動手機。首次執行可將主螢幕應用程式移至工作屏；執行期間 Eta 優先使用，其他應用程式可照常使用。不支援的頁面會暫停，主動接管後才回主螢幕。</string>
+    <string name="work_display_enable">新任務使用獨立工作屏</string>
+    <string name="work_display_create">建立 / 檢查</string>
+    <string name="work_display_preview">工作屏實時畫面</string>
+    <string name="work_display_preview_waiting">等待工作屏畫面</string>
+    <string name="work_display_background">返回 · 後臺繼續執行</string>
+    <string name="work_display_stop">停止任務</string>
+    <string name="work_display_pause">暫停</string>
+    <string name="work_display_resume">繼續</string>
+    <string name="work_display_takeover">接管到主屏</string>
+    <string name="work_display_close">關閉工作屏</string>
+    <string name="work_display_snapshot_note">即時觀看，不支援觸控。返回或切換其他應用程式後任務繼續，可從執行通知重新觀看。停止任務會保留結果；關閉工作屏才銷毀副螢幕頁面。鎖定螢幕後需解鎖繼續，接管可能重建頁面。</string>
+    <string name="work_display_preview_unavailable">頁面已接管或工作階段已變更，請重新檢查工作屏。</string>
+    <string name="work_display_busy">正在處理…</string>
+    <string name="work_display_running">執行中 · Eta 正在使用應用程式</string>
+    <string name="work_display_paused">已暫停 · 可繼續或主動接管</string>
+    <string name="work_display_retained">結果頁已保留 · 從主螢幕開啟同一應用程式即可接管</string>
+    <string name="work_display_human">已接管 · 關閉工作屏後可開始新工作階段</string>
+    <string name="work_display_ready">工作屏就緒 · 返回對話發起任務</string>
+    <string name="work_display_lost">連線中斷 · 不會重播舊動作</string>
+    <string name="work_display_closed">工作屏已關閉</string>
+</resources>

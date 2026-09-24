@@ -41,6 +41,7 @@ More screenshots: chat, system tools, and settings
 
 ### Execution tools
 
+- **Independent work display (experimental):** when enabled, GUI tasks create a virtual secondary display using the current user’s signed-in apps. Watch live, return to chat or use another app while execution continues, and reopen the viewer from the execution notification. Requires the LSPosed system framework scope and accessibility service; see [work display setup and device checks](docs/WORK_DISPLAY.md).
 - **Direct system API calls:** use Android APIs and system intents to set alarms, control media, adjust volume, and read device status without navigating through app screens.
 - **GUI Agent:** combine the accessibility UI tree, element targeting, and screenshots taken as needed to tap, scroll, and type. An overlay shows execution status, and you can stop or take over.
 - **Built-in browser:** load JavaScript pages in a WebView, extract readable content, interact with the DOM, and capture screenshots. You can open the same browser session to take control.
