@@ -35,10 +35,16 @@ internal object WorkDisplayHooks {
                 if (allow) chain.proceed() else null
             } != null) && installed
             installed = (hooks.intercept("system.work-display.recents", recents, "ActivityTaskManagerService.startActivityFromRecents") { chain ->
-                if (broker?.guardFront(chain.getArg(0) as Int, true) != false) chain.proceed() else -96
+                val b = broker
+                val allow = try { b?.guardFront(chain.getThisObject()!!, chain.getArg(0) as Int, true) != false }
+                catch (e: Exception) { b?.fault(e); false }
+                if (allow) chain.proceed() else -96
             } != null) && installed
             installed = (hooks.intercept("system.work-display.front", front, "ActivityTaskManagerService.moveTaskToFront") { chain ->
-                if (broker?.guardFront(chain.getArg(2) as Int, false) != false) chain.proceed() else null
+                val b = broker
+                val allow = try { b?.guardFront(chain.getThisObject()!!, chain.getArg(2) as Int, false) != false }
+                catch (e: Exception) { b?.fault(e); false }
+                if (allow) chain.proceed() else null
             } != null) && installed
             val start = type(ModuleConfig.SYSTEM_SERVER_CLASS).getDeclaredMethod(
                 "startOtherServices", type(ModuleConfig.TIMINGS_TRACE_AND_SLOG_CLASS),

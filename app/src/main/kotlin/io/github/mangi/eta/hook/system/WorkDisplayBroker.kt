@@ -50,6 +50,7 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
         val client: IBinder,
         val display: VirtualDisplay,
         val reader: ImageReader,
+        val launcherUid: Int,
     ) {
         val id = UUID.randomUUID().toString()
         val userId = uid / 100000
@@ -68,7 +69,7 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
             override fun onReceive(receiverContext: Context, intent: Intent) {
                 val uid = sentFromUid
                 if (intent.getIntExtra("version", 0) != DisplayProtocol.VERSION || !isOwner(uid)) return
-                resultExtras = Bundle().apply { putBinder("broker", endpoint); putInt("version", DisplayProtocol.VERSION) }
+                setResultExtras(Bundle().apply { putBinder("broker", endpoint); putInt("version", DisplayProtocol.VERSION) })
                 resultCode = 1
             }
         }, IntentFilter(DisplayProtocol.ACTION), DisplayProtocol.PERMISSION, worker, Context.RECEIVER_EXPORTED)
@@ -172,7 +173,11 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
             check(display.display.flags and DisplayProtocol.REQUIRED_DISPLAY_FLAGS == DisplayProtocol.REQUIRED_DISPLAY_FLAGS) {
                 "ROM 未保留独立焦点/禁止抢焦点标志，拒绝运行"
             }
-            val session = Session(uid, client, display, reader)
+            val userContext = DisplayReflection.call(context, "createContextAsUser", user(currentUser), 0) as Context
+            val launcherUid = userContext.packageManager.resolveActivity(
+                Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME), android.content.pm.PackageManager.MATCH_DEFAULT_ONLY,
+            )?.activityInfo?.applicationInfo?.uid ?: -1
+            val session = Session(uid, client, display, reader, launcherUid)
             val death = IBinder.DeathRecipient {
                 session.lease.lost()
                 worker.post { synchronized(actionLock) { if (sessions[uid] === session) destroy(session) } }
@@ -228,13 +233,13 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
         s.packages.add(targetPackage)
         tasks().filter { taskUser(it) == s.userId && (it.baseActivity?.packageName == targetPackage || it.topActivity?.packageName == targetPackage) }
             .forEach { task ->
-                if (task.displayId != s.displayId) migrate(s, task, s.displayId)
+                if (taskDisplay(task) != s.displayId) migrate(s, task, s.displayId)
                 s.taskIds.add(task.taskId)
             }
         intent.component = android.content.ComponentName(info.packageName, info.name)
         val options = ActivityOptions.makeBasic().setLaunchDisplayId(s.displayId).toBundle()
         DisplayReflection.call(context, "startActivityAsUser", intent, options, user(s.userId))
-        tasks().filter { taskUser(it) == s.userId && it.displayId == s.displayId }.forEach { s.taskIds.add(it.taskId) }
+        tasks().filter { taskUser(it) == s.userId && taskDisplay(it) == s.displayId }.forEach { s.taskIds.add(it.taskId) }
     }
 
     private fun migrate(s: Session, info: ActivityManager.RunningTaskInfo, target: Int) {
@@ -252,7 +257,7 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
 
     private fun takeover(s: Session) = internally(s) {
         s.lease.takeover()
-        tasks().filter { taskUser(it) == s.userId && it.displayId == s.displayId }.forEach { migrate(s, it, 0) }
+        tasks().filter { taskUser(it) == s.userId && taskDisplay(it) == s.displayId }.forEach { migrate(s, it, 0) }
         s.reason = "已在主屏接管；关闭工作屏后可创建新会话"
     }
 
@@ -307,6 +312,7 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
     }
 
     private fun user(id: Int): UserHandle = DisplayReflection.call(UserHandle::class.java, "of", id) as UserHandle
+    private fun taskDisplay(task: ActivityManager.RunningTaskInfo): Int = DisplayReflection.get(task, "displayId") as Int
     private fun taskUser(task: ActivityManager.RunningTaskInfo): Int = DisplayReflection.get(task, "userId") as Int
     private fun displayOf(container: Any): Int = DisplayReflection.call(container, "getDisplayContent")?.let {
         DisplayReflection.call(it, "getDisplayId") as Int
@@ -325,19 +331,23 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
             DisplayReflection.call(Class.forName("com.android.server.wm.ActivityRecord", false, loader), "forTokenLocked", it)
         }
         val sourceDisplay = source?.let(::displayOf)
+        val safeOptions = DisplayReflection.get(request, "activityOptions")
+        val requestedOptions = safeOptions?.let { DisplayReflection.call(it, "getOriginalOptions") } as? ActivityOptions
         val s = authorized.get() ?: sessions.values.firstOrNull {
-            it.userId == targetUser && (info.packageName in it.packages || sourceDisplay == it.displayId)
+            it.userId == targetUser && (info.packageName in it.packages || sourceDisplay == it.displayId || requestedOptions?.launchDisplayId == it.displayId)
         } ?: return true
         if (s.lease.state == DisplayLease.State.HUMAN || s.lease.state == DisplayLease.State.CLOSED) return true
         val own = authorized.get() === s || sourceDisplay == s.displayId
         if (!own) {
             // A launcher-origin MAIN/LAUNCHER start is an explicit takeover after completion.
             val intent = DisplayReflection.get(request, "intent") as? Intent
+            val callerUid = DisplayReflection.get(request, "callingUid") as Int
             if (s.lease.state == DisplayLease.State.RETAINED && intent?.action == Intent.ACTION_MAIN &&
-                intent.hasCategory(Intent.CATEGORY_LAUNCHER)) {
+                intent.hasCategory(Intent.CATEGORY_LAUNCHER) && callerUid == s.launcherUid && s.launcherUid >= 0) {
                 // Migration itself stays in the normal launcher path, now allowed by the state.
                 s.lease.takeover()
                 s.reason = "用户从主屏打开应用，已接管"
+                routeOptions(request, 0)
                 return true
             }
             s.reason = "ETA 正在占用应用，请在工作屏中暂停或接管"
@@ -346,15 +356,19 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
         if (!s.lease.exclusive) { s.reason = "结果页请求启动新页面，请主动接管"; return false }
         check(targetUser == s.userId) { "禁止跨 Android 用户启动" }
         s.packages.add(info.packageName)
+        routeOptions(request, s.displayId)
+        return true
+    }
+
+    private fun routeOptions(request: Any, display: Int) {
         val safe = DisplayReflection.get(request, "activityOptions")
         val options = (safe?.let { DisplayReflection.call(it, "getOriginalOptions") } as? ActivityOptions)
             ?: ActivityOptions.makeBasic()
-        options.launchDisplayId = s.displayId
+        options.launchDisplayId = display
         if (safe == null) {
             val safeClass = Class.forName("com.android.server.wm.SafeActivityOptions", false, loader)
             DisplayReflection.set(request, "activityOptions", safeClass.getConstructor(ActivityOptions::class.java).newInstance(options))
         } else DisplayReflection.set(safe, "mOriginalOptions", options)
-        return true
     }
 
     fun guardReparent(container: Any, parent: Any): Boolean {
@@ -366,8 +380,13 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
         return authorized.get() === s || s.lease.state in setOf(DisplayLease.State.HUMAN, DisplayLease.State.CLOSED)
     }
 
-    fun guardFront(taskId: Int, recents: Boolean): Boolean {
-        val s = sessions.values.firstOrNull { taskId in it.taskIds } ?: return true
+    fun guardFront(service: Any, taskId: Int, recents: Boolean): Boolean {
+        if (sessions.isEmpty()) return true
+        val display = synchronized(DisplayReflection.get(service, "mGlobalLock")!!) {
+            val root = DisplayReflection.get(service, "mRootWindowContainer")!!
+            DisplayReflection.call(root, "anyTaskForId", taskId, 0)?.let(::displayOf)
+        }
+        val s = sessions.values.firstOrNull { it.displayId == display || taskId in it.taskIds } ?: return true
         if (authorized.get() === s || s.lease.state == DisplayLease.State.HUMAN) return true
         if (recents && s.lease.state == DisplayLease.State.RETAINED) {
             s.lease.takeover(); s.reason = "用户从最近任务接管"; return true

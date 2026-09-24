@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityNodeInfo
 import io.github.mangi.eta.agent.media.AgentImageCodec
+import io.github.mangi.eta.agent.accessibility.TextEditPlanner
 import io.github.mangi.eta.agent.model.AgentModelClient
 import io.github.mangi.eta.agent.runtime.AgentRunController
 import java.util.UUID
@@ -18,6 +19,8 @@ internal class DisplayLocalTools(
     private val run: String,
     private val controller: AgentRunController,
 ) : AutoCloseable {
+    private val actionLock = Any()
+    private val closed = java.util.concurrent.atomic.AtomicBoolean(false)
     private var observation: Observation? = null
     private var pauseBinding: AgentRunController.ResourceBinding? = null
     private data class Observation(val id: String, val session: String, val epoch: Long, val tree: DisplayAccessibility.Tree)
@@ -28,14 +31,20 @@ internal class DisplayLocalTools(
     }
 
     override fun close() {
+        if (!closed.compareAndSet(false, true)) return
         pauseBinding?.close()
-        clearObservation()
+        // Revoke first: do not wait behind an in-flight gesture or node action.
         DisplaySessionStore.retain(run)
+        synchronized(actionLock) { clearObservation() }
     }
     private fun clearObservation() { observation?.tree?.close(); observation = null }
 
-    fun execute(call: AgentModelClient.ToolCall): AgentModelClient.ToolResult {
+    fun execute(call: AgentModelClient.ToolCall): AgentModelClient.ToolResult = synchronized(actionLock) {
+        executeLocked(call)
+    }
+    private fun executeLocked(call: AgentModelClient.ToolCall): AgentModelClient.ToolResult {
         return try {
+            check(!closed.get()) { "执行租约已结束" }
             check(DisplayToolPolicy.allows(call.name)) { "此工具无法隔离到副屏，需要暂停并主动接管" }
             val args = JSONObject(call.argumentsJson.ifBlank { "{}" })
             when (call.name) {
@@ -169,10 +178,15 @@ internal class DisplayLocalTools(
         val node = selected ?: error("没有唯一的目标节点，请提供 index 和 observation_id")
         check(node.value.refresh() && DisplayAccessibility.identity(node.value) == node.identity) { "节点已失效" }
         check(node.value.isEnabled) { "目标节点不可用" }
+        val insertion = if (name == "input_text" && args.optString("mode", "append") == "append") {
+            check(!node.value.isPassword) { "密码节点不能安全追加文字，请使用 replace_text 或主动接管" }
+            TextEditPlanner.insertAtSelection(node.value.text?.toString().orEmpty(), args.getString("text"),
+                node.value.textSelectionStart, node.value.textSelectionEnd) ?: error("无法确定光标位置，请使用 replace_text")
+        } else null
         val text = when (name) {
             "input_text" -> when (args.optString("mode", "append")) {
                 "replace" -> args.getString("text")
-                "append" -> node.value.text.orEmpty().toString() + args.getString("text")
+                "append" -> insertion!!.text
                 else -> error("副屏不支持共享剪贴板粘贴，请使用 replace_text")
             }
             "replace_text" -> args.getString("text")
@@ -195,12 +209,19 @@ internal class DisplayLocalTools(
                 AccessibilityNodeInfo.ACTION_SET_TEXT
             }
         }
-        DisplaySessionStore.action("validate", run, obs.epoch)
-        check(node.value.performAction(action, text?.let { Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, it) } })) {
-            "应用拒绝节点操作，可能依赖 IME，请主动接管"
+        DisplaySessionStore.commitNode(run, obs.epoch) {
+            check(node.value.performAction(action, text?.let { Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, it) } })) {
+                "应用拒绝节点操作，可能依赖 IME，请主动接管"
+            }
+            if (insertion != null) {
+                check(node.value.performAction(AccessibilityNodeInfo.ACTION_SET_SELECTION, Bundle().apply {
+                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_START_INT, insertion.cursor)
+                    putInt(AccessibilityNodeInfo.ACTION_ARGUMENT_SELECTION_END_INT, insertion.cursor)
+                })) { "文字已提交，但光标位置无法确认，不自动重试" }
+            }
         }
         if (text != null && !node.value.isPassword) {
-            check(node.value.refresh() && node.value.text.orEmpty().toString() == text) { "文字提交结果无法确认，不自动重试" }
+            check(node.value.refresh() && node.value.text?.toString().orEmpty() == text) { "文字提交结果无法确认，不自动重试" }
         }
         clearObservation()
         return success()

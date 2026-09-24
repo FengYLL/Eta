@@ -20,9 +20,9 @@ internal object DisplayAccessibility {
         fun json(): JSONArray = JSONArray().also { array ->
             nodes.forEach { n ->
                 val v = n.value
-                array.put(JSONObject().put("index", n.index).put("text", if (v.isPassword) "" else v.text.orEmpty())
-                    .put("desc", v.contentDescription.orEmpty()).put("class", v.className.orEmpty())
-                    .put("package", v.packageName.orEmpty()).put("view_id", v.viewIdResourceName.orEmpty())
+                array.put(JSONObject().put("index", n.index).put("text", if (v.isPassword) "" else v.text?.toString().orEmpty())
+                    .put("desc", v.contentDescription?.toString().orEmpty()).put("class", v.className?.toString().orEmpty())
+                    .put("package", v.packageName?.toString().orEmpty()).put("view_id", v.viewIdResourceName.orEmpty())
                     .put("clickable", v.isClickable).put("editable", v.isEditable).put("focused", v.isFocused)
                     .put("scrollable", v.isScrollable).put("enabled", v.isEnabled).put("password", v.isPassword)
                     .put("bounds", JSONArray(listOf(n.bounds.left, n.bounds.top, n.bounds.right, n.bounds.bottom)))

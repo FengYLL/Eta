@@ -27,6 +27,7 @@ internal object DisplaySessionStore {
     private val mutable = MutableStateFlow(Snapshot())
     val state = mutable.asStateFlow()
     private val anchor = Binder()
+    private val nodeCommitLock = Any()
     @Volatile private var broker: IBinder? = null
     @Volatile private var controller: AgentRunController? = null
     private const val RESOURCE = "work-display"
@@ -66,7 +67,7 @@ internal object DisplaySessionStore {
     fun pause() {
         controller?.pause()
         if (broker != null && mutable.value.session.isNotEmpty()) {
-            runCatching { update(call("pause")) }.onFailure {
+            runCatching { synchronized(nodeCommitLock) { update(call("pause")) } }.onFailure {
                 mutable.value = mutable.value.copy(state = "LOST", reason = it.message.orEmpty())
             }
         }
@@ -78,11 +79,13 @@ internal object DisplaySessionStore {
     }
     fun onRunPause(run: String, paused: Boolean) {
         if (mutable.value.run != run) return
-        update(call(if (paused) "pause" else "acquire", Bundle().apply { putString("run", run) }))
+        synchronized(nodeCommitLock) {
+            update(call(if (paused) "pause" else "acquire", Bundle().apply { putString("run", run) }))
+        }
     }
     fun retain(run: String) {
         if (mutable.value.run != run) return
-        runCatching { update(call("retain", Bundle().apply { putString("run", run) })) }
+        runCatching { synchronized(nodeCommitLock) { update(call("retain", Bundle().apply { putString("run", run) })) } }
         controller = null
     }
     fun takeover() {
@@ -107,6 +110,13 @@ internal object DisplaySessionStore {
         extras.putLong("epoch", epoch)
         extras.putString("operation_id", UUID.randomUUID().toString())
         return update(call(op, extras))
+    }
+    /** Pause acknowledgement and explicit task migration wait until node submission has returned.
+     * Automatic launcher takeover is possible only after retain(), which uses this same gate.
+     */
+    fun <T> commitNode(run: String, epoch: Long, block: () -> T): T = synchronized(nodeCommitLock) {
+        action("validate", run, epoch)
+        block()
     }
 
     @Synchronized private fun update(result: Bundle): Snapshot {
