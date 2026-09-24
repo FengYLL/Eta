@@ -26,12 +26,12 @@
     <uses-permission android:name="android.permission.VIBRATE" />
 
     <permission
-        android:name="io.github.mangi.eta.permission.CONTROL_ACCESSIBILITY_PROTECTION"
+        android:name="io.github.fengyl.eta.permission.CONTROL_ACCESSIBILITY_PROTECTION"
         android:protectionLevel="signature" />
 
-    <uses-permission android:name="io.github.mangi.eta.permission.CONTROL_ACCESSIBILITY_PROTECTION" />
-    <permission android:name="io.github.mangi.eta.permission.CONTROL_WORK_DISPLAY" android:protectionLevel="signature" />
-    <uses-permission android:name="io.github.mangi.eta.permission.CONTROL_WORK_DISPLAY" />
+    <uses-permission android:name="io.github.fengyl.eta.permission.CONTROL_ACCESSIBILITY_PROTECTION" />
+    <permission android:name="io.github.fengyl.eta.permission.CONTROL_WORK_DISPLAY" android:protectionLevel="signature" />
+    <uses-permission android:name="io.github.fengyl.eta.permission.CONTROL_WORK_DISPLAY" />
 
     <queries>
         <package android:name="com.google.android.googlequicksearchbox" />
@@ -162,7 +162,7 @@
 
         <provider
             android:name=".agent.accessibility.AgentAccessibilityHealthProvider"
-            android:authorities="io.github.mangi.eta.accessibility.health"
+            android:authorities="io.github.fengyl.eta.accessibility.health"
             android:exported="true"
             android:grantUriPermissions="false"
             android:permission="android.permission.MANAGE_ACCESSIBILITY" />
