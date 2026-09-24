@@ -189,6 +189,7 @@ internal class DisplayLocalTools(
             TextEditPlanner.insertAtSelection(node.value.text?.toString().orEmpty(), args.getString("text"),
                 node.value.textSelectionStart, node.value.textSelectionEnd) ?: error("无法确定光标位置，请使用 replace_text")
         } else null
+        if (name == "input_text") require(args.getString("text").length <= 1000) { "input_text 最多 1000 字符" }
         val text = when (name) {
             "input_text" -> when (args.optString("mode", "append")) {
                 "replace" -> args.getString("text")
@@ -236,9 +237,14 @@ internal class DisplayLocalTools(
     private fun waitFor(name: String, args: JSONObject): AgentModelClient.ToolResult {
         val expected = args.getString(if (name == "wait_for_text") "text" else "package_name")
         val deadline = SystemClock.uptimeMillis() + args.optLong("timeout_ms", 10000).coerceIn(0, 60000)
-        val exact = args.optString("match", "contains") == "exact"
+        val matchMode = args.optString("match", "contains")
+        require(matchMode in setOf("contains", "exact", "prefix")) { "副屏文字等待支持 contains/exact/prefix" }
         val includeDesc = args.optBoolean("include_desc", true)
-        fun matches(text: CharSequence?): Boolean = if (exact) text?.toString() == expected else text?.contains(expected) == true
+        fun matches(text: CharSequence?): Boolean = when (matchMode) {
+            "exact" -> text?.toString() == expected
+            "prefix" -> text?.startsWith(expected) == true
+            else -> text?.contains(expected) == true
+        }
         do {
             controller.throwIfCancelled()
             val state = DisplaySessionStore.refresh()

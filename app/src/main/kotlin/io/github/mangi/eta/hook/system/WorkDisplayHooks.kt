@@ -24,7 +24,7 @@ internal object WorkDisplayHooks {
             var installed = true
             installed = (hooks.intercept("system.work-display.start", starter, "ActivityStarter.executeRequest") { chain ->
                 val b = broker
-                val allow = try { b?.guardStart(chain.getArg(0)!!) != false }
+                val allow = try { b?.guardStart(chain.getThisObject()!!, chain.getArg(0)!!) != false }
                 catch (e: Exception) { b?.fault(e); false }
                 if (allow) chain.proceed() else -96 // ActivityManager.START_CANCELED
             } != null) && installed
@@ -38,7 +38,8 @@ internal object WorkDisplayHooks {
                 val b = broker
                 val allow = try { b?.guardFront(chain.getThisObject()!!, chain.getArg(0) as Int, true) != false }
                 catch (e: Exception) { b?.fault(e); false }
-                if (allow) chain.proceed() else -96
+                if (allow) chain.proceed(arrayOf(chain.getArg(0),
+                    b?.recentsOptions(chain.getArg(0) as Int, chain.getArg(1) as? android.os.Bundle) ?: chain.getArg(1))) else -96
             } != null) && installed
             installed = (hooks.intercept("system.work-display.front", front, "ActivityTaskManagerService.moveTaskToFront") { chain ->
                 val b = broker

@@ -18,8 +18,14 @@ internal object DisplayToolPolicy {
         val name = function.getString("name")
         val properties = function.optJSONObject("parameters")?.optJSONObject("properties")
         when (name) {
-            "press_key" -> properties?.optJSONObject("button")?.put("enum", JSONArray(listOf("back")))
-            "input_text" -> properties?.optJSONObject("mode")?.put("enum", JSONArray(listOf("append", "replace")))
+            "press_key" -> {
+                properties?.optJSONObject("button")?.put("enum", JSONArray(listOf("BACK")))
+                function.put("description", "只向工作屏发送 BACK；不执行主屏全局动作。")
+            }
+            "input_text" -> properties?.optJSONObject("mode")
+                ?.put("enum", JSONArray(listOf("append", "replace")))
+                ?.put("description", "append 在已聚焦节点光标处插入或替换选区；replace 替换完整值。禁止共享剪贴板。")
+            "wait_for_text" -> properties?.optJSONObject("match")?.put("enum", JSONArray(listOf("contains", "exact", "prefix")))
             "open_uri" -> function.put("description", "在工作屏打开 http/https 网页；其他协议需要用户主动接管。")
         }
         if (name in gui) function.put("description", function.optString("description") +

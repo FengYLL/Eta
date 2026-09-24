@@ -324,7 +324,7 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
     }
 
     /** Called under framework task locks. No IPC, disk or waits in any guard below. */
-    fun guardStart(request: Any): Boolean {
+    fun guardStart(starter: Any, request: Any): Boolean {
         if (sessions.isEmpty()) return true
         val info = DisplayReflection.get(request, "activityInfo") as? ActivityInfo ?: return true
         val targetUser = info.applicationInfo.uid / 100000
@@ -342,7 +342,8 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
         if (!own) {
             // A launcher-origin MAIN/LAUNCHER start is an explicit takeover after completion.
             val intent = DisplayReflection.get(request, "intent") as? Intent
-            val callerUid = DisplayReflection.get(request, "callingUid") as Int
+            val callerUid = (DisplayReflection.get(request, "callingUid") as Int).takeIf { it >= 0 }
+                ?: (DisplayReflection.get(request, "realCallingUid") as Int)
             if (s.lease.state == DisplayLease.State.RETAINED && intent?.action == Intent.ACTION_MAIN &&
                 intent.hasCategory(Intent.CATEGORY_LAUNCHER) && callerUid == s.launcherUid && s.launcherUid >= 0) {
                 // Migration itself stays in the normal launcher path, now allowed by the state.
@@ -356,6 +357,23 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
         }
         if (!s.lease.exclusive) { s.reason = "结果页请求启动新页面，请主动接管"; return false }
         check(targetUser == s.userId) { "禁止跨 Android 用户启动" }
+        if (sourceDisplay == s.displayId && authorized.get() !== s) {
+            val root = DisplayReflection.get(starter, "mRootWindowContainer")!!
+            var unsafe = false
+            DisplayReflection.call(root, "forAllLeafTasks", java.util.function.Consumer<Any> { task ->
+                val component = DisplayReflection.get(task, "realActivity") as? android.content.ComponentName
+                if (DisplayReflection.get(task, "mUserId") == s.userId && component?.packageName == info.packageName) {
+                    s.taskIds.add(DisplayReflection.get(task, "mTaskId") as Int)
+                    if (displayOf(task) != s.displayId && (DisplayReflection.call(task, "getRootTask") !== task ||
+                        DisplayReflection.call(task, "getWindowingMode") != 1)) unsafe = true
+                }
+            }, true)
+            if (unsafe) {
+                s.reason = "目标应用正在分屏或画中画中，已暂停，请主动接管"
+                s.lease.pause()
+                return false
+            }
+        }
         s.packages.add(info.packageName)
         routeOptions(request, s.displayId)
         return true
@@ -388,6 +406,7 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
             DisplayReflection.call(root, "anyTaskForId", taskId, 0)?.let(::displayOf)
         }
         val s = sessions.values.firstOrNull { it.displayId == display || taskId in it.taskIds } ?: return true
+        s.taskIds.add(taskId)
         if (authorized.get() === s || s.lease.state == DisplayLease.State.HUMAN) return true
         if (recents && s.lease.state == DisplayLease.State.RETAINED) {
             s.lease.takeover(); s.reason = "用户从最近任务接管"; return true
@@ -398,5 +417,10 @@ internal class WorkDisplayBroker(private val context: Context, private val loade
     fun fault(failure: Throwable) {
         healthy = false
         sessions.values.forEach { it.reason = "系统路由守卫失效：${failure.javaClass.simpleName}"; it.lease.lost() }
+    }
+
+    fun recentsOptions(taskId: Int, original: Bundle?): Bundle? {
+        if (sessions.values.none { taskId in it.taskIds && it.lease.state == DisplayLease.State.HUMAN }) return original
+        return (original?.let(ActivityOptions::fromBundle) ?: ActivityOptions.makeBasic()).setLaunchDisplayId(0).toBundle()
     }
 }
